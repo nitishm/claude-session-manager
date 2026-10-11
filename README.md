@@ -6,7 +6,8 @@ Browse, search, resume and clean up Claude Code sessions.
 
 | Path | What |
 |---|---|
-| `go/` | Go TUI (Bubble Tea). Scans `~/.claude/projects/*/*.jsonl`. |
+| `go/engine/` | The backend. Pure Go, no UI imports. Sessions, live status, forks, tags, query, open/delete/undo, AI calls. |
+| `go/` | Go TUI (Bubble Tea), a client of the engine. Keys, layout, styles, popups. |
 | `ccs`, `ccs-tui` | Original Python versions. Kept for reference. |
 | `tests/pty/` | End-to-end checks: run the real binary in a pty, read the screen with `pyte`. |
 
@@ -19,7 +20,8 @@ cd go && go build -o ../ccs-go . && ../ccs-go
 ## Tests
 
 ```sh
-CCS_BIN=$PWD/ccs-go uv run --with pyte python tests/pty/new_test.py
+cd go && go test ./engine   # engine unit tests, temp home
+cd .. && CCS_BIN=$PWD/ccs-go uv run --with pyte python tests/pty/new_test.py
 ```
 
 - Most tests use a temp `$HOME` with fake transcripts and a fake `claude`.
