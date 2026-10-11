@@ -1,0 +1,5 @@
+ccs-go
+__pycache__/
+*.bak
+*.pre2
+.DS_Store
