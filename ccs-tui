@@ -1,0 +1,302 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["textual>=0.80"]
+# ///
+"""ccs-tui: browse Claude Code sessions across all dirs. Enter resumes."""
+import os, sys, json, subprocess
+from datetime import datetime
+from importlib.machinery import SourceFileLoader
+from importlib.util import spec_from_loader, module_from_spec
+
+_p = os.path.join(os.path.dirname(os.path.realpath(__file__)), "ccs")
+_s = spec_from_loader("ccs", SourceFileLoader("ccs", _p))
+core = module_from_spec(_s); _s.loader.exec_module(core)
+
+from rich.markup import escape
+from textual import work, on
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import DataTable, Footer, Header, Input, Static
+
+
+STATE_F = os.path.expanduser("~/.cache/ccs/state.json")
+SORTS = ["recent", "dir", "prompts", "oldest"]
+
+
+def load_state():
+    try:
+        return json.load(open(STATE_F))
+    except Exception:
+        return {}
+
+
+class CCS(App):
+    TITLE = "Claude sessions"
+    CSS = """
+    Input { margin: 0 1; }
+    #main { height: 1fr; }
+    DataTable { width: 58%; }
+    #detail { width: 42%; border-left: tall $primary 40%; padding: 0 2; }
+    #bar { height: 1; margin: 0 1; color: $text-muted; }
+    """
+    BINDINGS = [
+        Binding("enter", "resume", "Resume"),
+        Binding("/", "search", "Search"),
+        Binding("escape", "table", "Back", show=False),
+        Binding("s", "summarize", "Summarize"),
+        Binding("S", "summarize_all", "All", show=False),
+        Binding("p", "pin", "Pin"),
+        Binding("x", "hide", "Hide"),
+        Binding("H", "show_hidden", "Hidden", show=False),
+        Binding("o", "sort", "Sort"),
+        Binding("d", "dirfilter", "Dir"),
+        Binding("y", "copy", "Copy cmd"),
+        Binding("f", "fork", "Fork", show=False),
+        Binding("t", "theme", "Theme", show=False),
+        Binding("v", "preview", "Preview", show=False),
+        Binding("r", "reload", "Reload", show=False),
+        Binding("?", "help", "Help"),
+        Binding("q", "quit", "Quit"),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.all = core.load()
+        self.shown = []
+        self.summarizing = set()
+        st = load_state()
+        self.pins = set(st.get("pins", []))
+        self.hidden = set(st.get("hidden", []))
+        self.sort = st.get("sort", "recent")
+        self.dirf = None
+        self.show_hid = False
+        self.saved_theme = st.get("theme")
+
+    def save(self):
+        os.makedirs(os.path.dirname(STATE_F), exist_ok=True)
+        json.dump({"pins": sorted(self.pins), "hidden": sorted(self.hidden), "sort": self.sort,
+                   "theme": self.theme}, open(STATE_F, "w"))
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Input(placeholder="/ to search titles, summaries, prompts, dirs…", id="q")
+        with Horizontal(id="main"):
+            yield DataTable(cursor_type="row", zebra_stripes=True)
+            with VerticalScroll(id="detail"):
+                yield Static(id="d")
+        yield Static(id="bar")
+        yield Footer()
+
+    def on_mount(self):
+        t = self.query_one(DataTable)
+        t.add_column("", width=2)
+        t.add_column("age", width=4)
+        t.add_column("dir", width=22)
+        t.add_column("session")
+        t.add_column("#", width=4)
+        if self.saved_theme:
+            try:
+                self.theme = self.saved_theme
+            except Exception:
+                pass
+        self.refresh_rows()
+        t.focus()
+
+    def hay(self, s):
+        return " ".join([core.label(s), s["summary"] or "", core.short(s["cwd"]), s["pr"] or "", *s["plist"]]).lower()
+
+    def refresh_rows(self, q=""):
+        t = self.query_one(DataTable)
+        t.clear()
+        words = q.lower().split()
+        rows = [s for s in self.all if all(w in self.hay(s) for w in words)
+                and (self.show_hid or s["id"] not in self.hidden)
+                and (not self.dirf or s["cwd"] == self.dirf)]
+        key = {"recent": lambda s: -s["mtime"], "oldest": lambda s: s["mtime"],
+               "dir": lambda s: (core.short(s["cwd"]), -s["mtime"]), "prompts": lambda s: -s["prompts"]}[self.sort]
+        rows.sort(key=lambda s: (s["id"] not in self.pins, key(s)))
+        self.shown = rows
+        now = __import__("time").time()
+        for s in rows:
+            badge = ("📌" if s["id"] in self.pins else "🟢" if now - s["mtime"] < 120
+                     else "🔗" if s["pr"] else "  ")
+            if s["id"] in self.hidden:
+                badge = "🙈"
+            mark = "⏳ " if s["id"] in self.summarizing else ("✦ " if s["summary"] else "")
+            d = core.short(s["cwd"]).rstrip("/").split("/")
+            t.add_row(badge, core.ago(s["mtime"]), "/".join(d[-2:]) if len(d) > 1 else d[0],
+                      mark + core.clean(core.label(s), 70), str(s["prompts"]), key=s["id"])
+        self.sub_title = f"{len(rows)}/{len(self.all)}"
+        self.query_one("#bar", Static).update(
+            f" sort:[b]{self.sort}[/]  dir:[b]{core.short(self.dirf) if self.dirf else 'all'}[/]"
+            f"  pinned:{len(self.pins)}  hidden:{len(self.hidden)}{' (shown)' if self.show_hid else ''}"
+            f"  summarized:{sum(1 for s in self.all if s['summary'])}/{len(self.all)}")
+        if rows:
+            self.show(rows[0])
+        else:
+            self.query_one("#d", Static).update("no match")
+
+    def cur(self):
+        t = self.query_one(DataTable)
+        if not self.shown or t.row_count == 0:
+            return None
+        return self.shown[t.cursor_row]
+
+    def show(self, s):
+        e = escape
+        from datetime import datetime
+        out = [f"[b]{e(core.label(s))}[/]", f"[dim]{e(core.short(s['cwd']))}[/]",
+               f"[dim]{datetime.fromtimestamp(s['mtime']):%a %d %b %H:%M} · {core.ago(s['mtime'])} ago · {s['prompts']} prompts[/]"]
+        if s["pr"]:
+            out.append(f"[blue]{e(s['pr'])}[/]")
+        sib = sum(1 for x in self.all if x["cwd"] == s["cwd"])
+        out.append(f"[dim]{sib} sessions in this dir[/]")
+        out += ["", "[b $success]SUMMARY[/]" if s["summary"] else "[b dim]SUMMARY[/]  [dim](press s to generate)[/]"]
+        if s["summary"]:
+            out.append(e(s["summary"]))
+        out += ["", "[b]STARTED WITH[/]", e(core.clean(s["first"] or "", 400)),
+                "", "[b]LAST ASKED[/]", e(core.clean(s["last"] or "", 400)),
+                "", "[b]LAST REPLY[/]", e(s["atext"] or "-"),
+                "", f"[dim]claude --resume {s['id']}[/]"]
+        self.query_one("#d", Static).update("\n".join(out))
+
+    @on(DataTable.RowHighlighted)
+    def _hl(self, ev):
+        s = self.cur()
+        if s:
+            self.show(s)
+
+    @on(Input.Changed, "#q")
+    def _q(self, ev):
+        self.refresh_rows(ev.value)
+
+    @on(Input.Submitted, "#q")
+    def _qs(self, ev):
+        self.query_one(DataTable).focus()
+
+    def action_search(self):
+        self.query_one("#q", Input).focus()
+
+    def action_table(self):
+        self.query_one(DataTable).focus()
+
+    def action_resume(self):
+        if isinstance(self.focused, Input):
+            return
+        s = self.cur()
+        if s:
+            self.exit(s)
+
+    def sid_cmd(self, s, fork=False):
+        return f"cd {core.short(s['cwd'])} && claude --resume {s['id']}" + (" --fork-session" if fork else "")
+
+    def action_pin(self):
+        s = self.cur()
+        if s:
+            self.pins ^= {s["id"]}
+            self.save(); self.refresh_keep()
+
+    def action_hide(self):
+        s = self.cur()
+        if s:
+            self.hidden ^= {s["id"]}
+            self.notify("hidden" if s["id"] in self.hidden else "unhidden")
+            self.save(); self.refresh_keep()
+
+    def action_show_hidden(self):
+        self.show_hid = not self.show_hid
+        self.refresh_keep()
+
+    def action_sort(self):
+        self.sort = SORTS[(SORTS.index(self.sort) + 1) % len(SORTS)]
+        self.save(); self.refresh_keep()
+
+    def action_dirfilter(self):
+        dirs = sorted({s["cwd"] for s in self.all if s["cwd"]}, key=lambda d: core.short(d))
+        cyc = [None] + dirs
+        self.dirf = cyc[(cyc.index(self.dirf) + 1) % len(cyc)] if self.dirf in cyc else None
+        self.refresh_keep()
+
+    def action_copy(self):
+        s = self.cur()
+        if s:
+            subprocess.run(["pbcopy"], input=self.sid_cmd(s), text=True)
+            self.notify("copied resume command")
+
+    def action_fork(self):
+        s = self.cur()
+        if s:
+            s["_fork"] = True
+            self.exit(s)
+
+    def action_theme(self):
+        names = sorted(self.available_themes)
+        self.theme = names[(names.index(self.theme) + 1) % len(names)]
+        self.save()
+        self.notify(self.theme)
+
+    def action_preview(self):
+        d = self.query_one("#detail")
+        d.display = not d.display
+        self.query_one(DataTable).styles.width = "100%" if not d.display else "58%"
+
+    def action_reload(self):
+        self.all = core.load()
+        self.refresh_keep()
+        self.notify(f"{len(self.all)} sessions")
+
+    def action_help(self):
+        self.notify("enter resume · f fork · s/S summarize · p pin · x hide · H show hidden\n"
+                    "o sort · d dir filter · y copy cmd · v preview · t theme · r reload · / search",
+                    title="keys", timeout=12)
+
+    @work(thread=True)
+    def gen(self, s):
+        self.summarizing.add(s["id"])
+        self.call_from_thread(self.refresh_keep)
+        try:
+            res = core.summarize(s)
+        except Exception:
+            res = None
+        self.summarizing.discard(s["id"])
+        if res:
+            core.CACHE[res[0]] = res[1]
+            s["summary"] = res[1]
+            os.makedirs(os.path.dirname(core.CACHE_F), exist_ok=True)
+            import json
+            json.dump(core.CACHE, open(core.CACHE_F, "w"))
+        self.call_from_thread(self.refresh_keep)
+        if not res:
+            self.call_from_thread(self.notify, "summary failed", severity="error")
+
+    def refresh_keep(self):
+        t = self.query_one(DataTable)
+        row = t.cursor_row
+        self.refresh_rows(self.query_one("#q", Input).value)
+        if t.row_count:
+            t.move_cursor(row=min(row, t.row_count - 1))
+        s = self.cur()
+        if s:
+            self.show(s)
+
+    def action_summarize(self):
+        s = self.cur()
+        if s and s["id"] not in self.summarizing:
+            self.gen(s)
+
+    def action_summarize_all(self):
+        todo = [s for s in self.shown if not s["summary"]][:20]
+        self.notify(f"summarizing {len(todo)} sessions")
+        for s in todo:
+            self.gen(s)
+
+
+if __name__ == "__main__":
+    r = CCS().run()
+    if r:
+        if r.pop("_fork", False):
+            os.chdir(r["cwd"] if r["cwd"] and os.path.isdir(r["cwd"]) else os.getcwd())
+            os.execvp("claude", ["claude", "--resume", r["id"], "--fork-session"])
+        core.resume(r)

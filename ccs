@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""ccs: list/search/resume Claude Code sessions across all directories."""
+import json, os, sys, glob, subprocess, shutil, re, time
+from datetime import datetime, timezone
+
+ROOT = os.path.expanduser("~/.claude/projects")
+CACHE_F = os.path.expanduser("~/.cache/ccs/summaries.json")
+try:
+    CACHE = json.load(open(CACHE_F))
+except Exception:
+    CACHE = {}
+NOISE = ("<task-notification", "<pasted_content", "<bash-", "<ide_", "<local-command", "<command-name", "<system-reminder", "Caveat:", "[Request interrupted")
+
+
+def text_of(msg):
+    c = msg.get("content")
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return " ".join(b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+def clean(s, n=200):
+    return re.sub(r"\s+", " ", s).strip()[:n]
+
+
+def scan(path):
+    s = dict(id=os.path.basename(path)[:-6], path=path, cwd=None, title=None, ai=None,
+             first=None, last=None, prompts=0, plist=[], atext=None, summary=None, pr=None, ts=None, mtime=os.path.getmtime(path))
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            t = d.get("type")
+            if t == "custom-title":
+                s["title"] = d.get("customTitle") or s["title"]
+            elif t == "ai-title":
+                s["ai"] = d.get("aiTitle") or s["ai"]
+            elif t == "pr-link":
+                s["pr"] = d.get("prUrl") or d.get("url") or s["pr"]
+            elif t == "last-prompt":
+                s["last"] = clean(d.get("lastPrompt") or "") or s["last"]
+            elif t == "user" and not d.get("isMeta") and not d.get("isSidechain"):
+                s["cwd"] = s["cwd"] or d.get("cwd")
+                s["ts"] = d.get("timestamp") or s["ts"]
+                txt = text_of(d.get("message", {}))
+                if txt and not txt.lstrip().startswith(NOISE):
+                    s["prompts"] += 1
+                    s["first"] = s["first"] or clean(txt)
+                    s["last"] = clean(txt)
+                    s["plist"].append(clean(txt, 300))
+            elif t == "assistant" and not d.get("isSidechain"):
+                at = text_of(d.get("message", {}))
+                if len(at) > 40:
+                    s["atext"] = clean(at, 500)
+    s["summary"] = CACHE.get(f"{s['id']}:{int(s['mtime'])}")
+    return s
+
+
+def load():
+    out = [scan(p) for p in glob.glob(f"{ROOT}/*/*.jsonl")]
+    out = [s for s in out if s["prompts"] > 0]
+    out.sort(key=lambda s: s["mtime"], reverse=True)
+    return out
+
+
+def ago(m):
+    d = time.time() - m
+    for n, u in ((86400, "d"), (3600, "h"), (60, "m")):
+        if d >= n:
+            return f"{int(d // n)}{u}"
+    return "now"
+
+
+def short(cwd):
+    return (cwd or "?").replace(os.path.expanduser("~"), "~")
+
+
+def label(s):
+    return s["title"] or s["ai"] or s["first"] or "(untitled)"
+
+
+def excerpt(s):
+    if s["summary"]:
+        return s["summary"]
+    good = [re.sub(r"<pasted_content[^>]*>.*", "[paste]", p) for p in s["plist"] if len(p.split()) >= 5]
+    if not good:
+        return s["last"] or ""
+    if len(good) == 1 or good[0] == good[-1]:
+        return good[0]
+    return f"{clean(good[0], 55)}  ⟶  {clean(good[-1], 55)}"
+
+
+def summarize(s):
+    ctx = (f"Title: {label(s)}\nDir: {short(s['cwd'])}\nFirst prompts:\n- " + "\n- ".join(s["plist"][:3]) +
+           "\nLast prompts:\n- " + "\n- ".join(s["plist"][-3:]) + f"\nLast assistant message: {s['atext']}")
+    q = ("Summarize this Claude Code session in max 25 words, plain text, no preamble: "
+         "what it was about, then where it ended or what is left. Session excerpt follows.\n\n" + ctx)
+    r = subprocess.run(["claude", "-p", "--model", "haiku", "--no-session-persistence", q],
+                       capture_output=True, text=True, timeout=40, cwd="/tmp", stdin=subprocess.DEVNULL,
+                       env={k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"})
+    out = clean(r.stdout, 300)
+    return (f"{s['id']}:{int(s['mtime'])}", out) if r.returncode == 0 and out else None
+
+
+def summarize_all(limit):
+    from concurrent.futures import ThreadPoolExecutor
+    todo = [s for s in load() if not s["summary"]][:limit]
+    print(f"summarizing {len(todo)} sessions...", file=sys.stderr)
+    with ThreadPoolExecutor(4) as ex:
+        for i, res in enumerate(ex.map(lambda s: _safe(summarize, s), todo), 1):
+            if res:
+                CACHE[res[0]] = res[1]
+            print(f"\r{i}/{len(todo)}", end="", file=sys.stderr)
+    os.makedirs(os.path.dirname(CACHE_F), exist_ok=True)
+    json.dump(CACHE, open(CACHE_F, "w"))
+    print("\ndone", file=sys.stderr)
+
+
+def _safe(f, *a):
+    try:
+        return f(*a)
+    except Exception:
+        return None
+
+
+def row(s):
+    return "\t".join([s["id"], f"{ago(s['mtime']):>4}", f"{short(s['cwd'])[-28:]:<28}", clean(label(s), 60),
+                      clean(excerpt(s), 110)])
+
+
+def detail(s):
+    return (f"{label(s)}\n{'─' * 60}\ndir:     {short(s['cwd'])}\nid:      {s['id']}\n"
+            f"active:  {datetime.fromtimestamp(s['mtime']):%Y-%m-%d %H:%M} ({ago(s['mtime'])} ago)\n"
+            f"prompts: {s['prompts']}\npr:      {s['pr'] or '-'}\n\nSUMMARY:\n{s['summary'] or '(run: ccs --summarize)'}\n\nSTARTED WITH:\n{s['first']}\n\nLAST ASKED:\n{s['last']}\n\nLAST REPLY:\n{s['atext']}\n"
+            f"\nresume:  cd {short(s['cwd'])} && claude --resume {s['id']}")
+
+
+def find(sid):
+    return next((s for s in load() if s["id"].startswith(sid)), None)
+
+
+def resume(s):
+    cwd = s["cwd"] if s["cwd"] and os.path.isdir(s["cwd"]) else os.getcwd()
+    os.chdir(cwd)
+    os.execvp("claude", ["claude", "--resume", s["id"]])
+
+
+def main(a):
+    if a and a[0] == "--show":
+        s = find(a[1]); print(detail(s) if s else "not found"); return
+    if a and a[0] == "--summarize":
+        summarize_all(int(a[1]) if len(a) > 1 else 40); return
+    if a and a[0] == "--rows":
+        print("\n".join(row(s) for s in load())); return
+    if a and a[0] in ("-h", "--help"):
+        print("ccs            fzf picker, Enter = resume in session's dir\nccs --summarize [N]  LLM one-liners (haiku, cached) for N newest unsummarized\nccs -l [N]     list newest N (default 30)\nccs <id-prefix> resume directly"); return
+    if a and a[0] == "-l":
+        n = int(a[1]) if len(a) > 1 else 30
+        for s in load()[:n]:
+            print(f"{s['id'][:8]}  {ago(s['mtime']):>4}  {short(s['cwd']):<40} {clean(label(s), 50)}\n          ↳ {clean(excerpt(s), 110)}")
+        return
+    if a:
+        s = find(a[0]); resume(s) if s else sys.exit("not found"); return
+    if not shutil.which("fzf"):
+        sys.exit("fzf required (or use -l)")
+    me = os.path.abspath(sys.argv[0])
+    p = subprocess.run(["fzf", "--delimiter=\t", "--with-nth=2..", "--ansi", "--no-sort", "--reverse",
+                        "--header=Enter=resume  ctrl-/=toggle preview  (type to search all titles/prompts)",
+                        "--preview", f"{me} --show {{1}}", "--preview-window=right,50%,wrap"],
+                       input="\n".join(row(s) for s in load()), text=True, capture_output=False,
+                       stdout=subprocess.PIPE)
+    if p.returncode == 0 and p.stdout.strip():
+        resume(find(p.stdout.split("\t")[0]))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
