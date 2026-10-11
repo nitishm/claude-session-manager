@@ -2,20 +2,12 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"sort"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -23,306 +15,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"ccsgo/engine"
 )
-
-// ───────────────────────── data ─────────────────────────
-
-type session struct {
-	ID, Path, Cwd, Title, AI, First, Last, PR, AText, Summary string
-	Prompts                                                   int
-	MTime, Started                                            time.Time
-	PList                                                     []string
-	Turns                                                     []turn
-	hayC                                                      string
-	UH                                                        []uint64 // hashed message uuids; a fork copies its original's
-	Fork                                                      bool     // created by ccs fork (named with a leading [fork])
-	ForkOf                                                    *session // best guess at the original
-	Forks                                                     int      // forks made from this session
-}
-
-var (
-	home       = os.Getenv("HOME")
-	cacheDir   = filepath.Join(home, ".cache", "ccs")
-	summaryF   = filepath.Join(cacheDir, "summaries.json")
-	stateF     = filepath.Join(cacheDir, "state-go.json")
-	wsRe       = regexp.MustCompile(`\s+`)
-	pasteRe    = regexp.MustCompile(`<pasted_content[^>]*>.*`)
-	noisePfx   = []string{"<local-command", "<command-name", "<command-message", "<system-reminder", "Caveat:", "[Request interrupted", "<task-notification", "<pasted_content", "<bash-", "<ide_"}
-	summarySem = make(chan struct{}, 4)
-)
-
-var mdRe = strings.NewReplacer("```", "", "**", "", "###", "", "##", "")
-
-func clean(s string, n int) string {
-	s = mdRe.Replace(s)
-	s = strings.TrimSpace(wsRe.ReplaceAllString(s, " "))
-	r := []rune(s)
-	if len(r) > n {
-		r = r[:n]
-	}
-	return string(r)
-}
-
-type turn struct {
-	user bool
-	text string
-}
-
-func (s *session) addTurn(user bool, text string) {
-	s.Turns = append(s.Turns, turn{user, text})
-	if len(s.Turns) > 4 {
-		s.Turns = s.Turns[1:]
-	}
-}
-
-type rawLine struct {
-	Timestamp   string `json:"timestamp"`
-	UUID        string `json:"uuid"`
-	Type        string `json:"type"`
-	CustomTitle string `json:"customTitle"`
-	AITitle     string `json:"aiTitle"`
-	LastPrompt  string `json:"lastPrompt"`
-	PRURL       string `json:"prUrl"`
-	URL         string `json:"url"`
-	IsMeta      bool   `json:"isMeta"`
-	IsSidechain bool   `json:"isSidechain"`
-	Cwd         string `json:"cwd"`
-	Message     struct {
-		Content json.RawMessage `json:"content"`
-	} `json:"message"`
-}
-
-func textOf(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return s
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(raw, &blocks) == nil {
-		var parts []string
-		for _, b := range blocks {
-			if b.Type == "text" {
-				parts = append(parts, b.Text)
-			}
-		}
-		return strings.Join(parts, " ")
-	}
-	return ""
-}
-
-func scan(path string, cache map[string]string) *session {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	st, _ := f.Stat()
-	s := &session{ID: strings.TrimSuffix(filepath.Base(path), ".jsonl"), Path: path, MTime: st.ModTime()}
-	rd := bufio.NewReaderSize(f, 64<<10)
-	for {
-		line, err := rd.ReadBytes('\n')
-		if len(line) > 2 && wanted(line) {
-			var d rawLine
-			if json.Unmarshal(line, &d) == nil {
-				if d.UUID != "" && (d.Type == "user" || d.Type == "assistant") {
-					s.UH = append(s.UH, h64(d.UUID))
-				}
-				switch d.Type {
-				case "custom-title":
-					if d.CustomTitle != "" {
-						s.Title = d.CustomTitle
-					}
-				case "ai-title":
-					if d.AITitle != "" {
-						s.AI = d.AITitle
-					}
-				case "pr-link":
-					if d.PRURL != "" {
-						s.PR = d.PRURL
-					} else if d.URL != "" {
-						s.PR = d.URL
-					}
-				case "last-prompt":
-					if c := clean(d.LastPrompt, 200); c != "" {
-						s.Last = c
-					}
-				case "user":
-					if d.IsMeta || d.IsSidechain {
-						break
-					}
-					if s.Cwd == "" {
-						s.Cwd = d.Cwd
-					}
-					if s.Started.IsZero() {
-						if ts, err := time.Parse(time.RFC3339, d.Timestamp); err == nil {
-							s.Started = ts
-						}
-					}
-					txt := unwrapCmd(textOf(d.Message.Content))
-					if txt != "" && !hasNoise(txt) {
-						s.Prompts++
-						c := clean(txt, 300)
-						if s.First == "" {
-							s.First = c
-						}
-						s.Last = c
-						s.PList = append(s.PList, c)
-						s.addTurn(true, c)
-					}
-				case "assistant":
-					if d.IsSidechain {
-						break
-					}
-					if at := textOf(d.Message.Content); len(at) > 40 {
-						s.AText = clean(at, 500)
-						s.addTurn(false, clean(at, 400))
-					}
-				}
-			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				return nil
-			}
-			break
-		}
-	}
-	if s.Prompts == 0 {
-		return nil
-	}
-	s.Summary = cache[fmt.Sprintf("%s:%d", s.ID, s.MTime.Unix())]
-	return s
-}
-
-var cmdRe = regexp.MustCompile(`(?s)<command-message>(.*?)</command-message>\s*<command-name>(.*?)</command-name>(?:\s*<command-args>(.*?)</command-args>)?`)
-
-// slash-command prompts arrive as XML wrappers; show them as "/name args".
-func unwrapCmd(t string) string {
-	if m := cmdRe.FindStringSubmatch(t); m != nil {
-		return strings.TrimSpace("/" + strings.TrimPrefix(m[2], "/") + " " + m[3])
-	}
-	return t
-}
-
-var wantedTypes = [][]byte{[]byte(`"type":"user"`), []byte(`"type":"assistant"`), []byte(`"type":"custom-title"`),
-	[]byte(`"type":"ai-title"`), []byte(`"type":"pr-link"`), []byte(`"type":"last-prompt"`)}
-
-// wanted is a cheap byte check so big attachment/snapshot lines are never JSON-decoded.
-func wanted(line []byte) bool {
-	// "type" sits in the first 400 bytes for most lines and in the last 700 for assistant lines
-	// (their big message body comes first), so the huge middle never needs scanning.
-	head, tail := line, []byte(nil)
-	if len(line) > 1100 {
-		head, tail = line[:400], line[len(line)-700:]
-	}
-	for _, w := range wantedTypes {
-		if bytes.Contains(head, w) || (tail != nil && bytes.Contains(tail, w)) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasNoise(t string) bool {
-	t = strings.TrimLeft(t, " \n\t")
-	if t == "/clear" || strings.HasPrefix(t, "/clear ") {
-		return true
-	}
-	for _, p := range noisePfx {
-		if strings.HasPrefix(t, p) {
-			return true
-		}
-	}
-	return false
-}
-
-func loadCache() map[string]string {
-	m := map[string]string{}
-	if b, err := os.ReadFile(summaryF); err == nil {
-		json.Unmarshal(b, &m)
-	}
-	return m
-}
-
-func saveSummary(key, text string) {
-	m := loadCache() // read-modify-write so the python tool's entries survive
-	m[key] = text
-	os.MkdirAll(cacheDir, 0o755)
-	b, _ := json.Marshal(m)
-	os.WriteFile(summaryF, b, 0o644)
-}
-
-func loadAll() []*session {
-	files, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"))
-	cache := loadCache()
-	var (
-		mu  sync.Mutex
-		wg  sync.WaitGroup
-		out []*session
-		sem = make(chan struct{}, 6)
-	)
-	for _, p := range files {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(p string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			if s := scan(p, cache); s != nil {
-				mu.Lock()
-				out = append(out, s)
-				mu.Unlock()
-			}
-		}(p)
-	}
-	wg.Wait()
-	linkForks(out)
-	return out
-}
-
-func (s *session) label() string {
-	for _, v := range []string{s.Title, s.AI, s.First} {
-		if v != "" {
-			return v
-		}
-	}
-	return "(untitled)"
-}
-
-func short(p string) string {
-	if p == "" {
-		return "?"
-	}
-	return strings.Replace(p, home, "~", 1)
-}
-
-func shortDir(p string) string {
-	parts := strings.Split(strings.TrimRight(short(p), "/"), "/")
-	if len(parts) > 2 {
-		parts = parts[len(parts)-2:]
-	}
-	return strings.Join(parts, "/")
-}
-
-func ago(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d >= 24*time.Hour:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	case d >= time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	case d >= time.Minute:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	return "now"
-}
-
-func (m model) isLive(s *session) bool { _, ok := m.live[s.ID]; return ok }
 
 // liveGlyph: idle ● (green), busy ◐ (working), anything else ? (needs you).
 func liveGlyph(li liveInfo) (string, lipgloss.Style) {
@@ -341,7 +36,7 @@ func rawBadge(m model, s *session) string {
 		return "✗"
 	case m.marks[s.ID]:
 		return "✓"
-	case m.pins[s.ID]:
+	case eng.Pinned(s.ID):
 		return "★"
 	case m.busy[s.ID]:
 		return "◌"
@@ -356,257 +51,9 @@ func rawBadge(m model, s *session) string {
 	return " "
 }
 
-var bootRe = regexp.MustCompile(`sec = (\d+)`)
-
-func bootTime() time.Time {
-	out, err := exec.Command("sysctl", "-n", "kern.boottime").Output()
-	if err != nil {
-		return time.Time{}
-	}
-	if m := bootRe.FindStringSubmatch(string(out)); m != nil {
-		var sec int64
-		fmt.Sscan(m[1], &sec)
-		return time.Unix(sec, 0)
-	}
-	return time.Time{}
-}
-
-// preBoot finds the sessions that were in use when the machine last went down:
-// everything active within 8h of the last activity before the boot.
-func preBoot(all []*session, boot time.Time) map[string]bool {
-	pre := map[string]bool{}
-	st, hadHistory := snapshot()
-	alive, _ := readPidFiles()
-	for _, s := range all {
-		if b, ok := st.Interrupted[s.ID]; ok {
-			if _, running := alive[s.ID]; !running && s.MTime.Unix() <= b {
-				pre[s.ID] = true
-			}
-		}
-	}
-	if len(pre) > 0 || hadHistory || boot.IsZero() || time.Since(boot) > 14*24*time.Hour {
-		return pre
-	}
-	// no snapshot history yet: guess from file times (everything active within 8h before the boot)
-	var last time.Time
-	for _, s := range all {
-		if s.MTime.Before(boot) && s.MTime.After(last) {
-			last = s.MTime
-		}
-	}
-	if last.IsZero() {
-		return pre
-	}
-	for _, s := range all {
-		if s.MTime.Before(boot) && s.MTime.After(last.Add(-8*time.Hour)) {
-			pre[s.ID] = true
-		}
-	}
-	return pre
-}
-
-// openSessions starts sessions in Ghostty, iTerm2 or Terminal.app. tab=false: one new window (Ghostty: a tab per session
-// inside it); tab=true: new tab(s) in the front window, which is the one ccs is running in.
-func openSessions(ss []*session, tab, fork bool) (int, error) {
-	bin, err := exec.LookPath("claude")
-	if err != nil {
-		return 0, fmt.Errorf("claude not found")
-	}
-	var cmds []string
-	for _, s := range ss {
-		dir := s.Cwd
-		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-			dir = home
-		}
-		cmds = append(cmds, fmt.Sprintf("cd %q && %s", dir, resumeCmd(bin, s, fork)))
-	}
-	if os.Getenv("TERM_PROGRAM") == "ghostty" {
-		return openGhostty(ss, bin, tab, fork)
-	}
-	n := 0
-	for i, s := range ss {
-		var err error
-		switch os.Getenv("TERM_PROGRAM") {
-		case "ghostty":
-			dir := s.Cwd
-			if st, e := os.Stat(dir); e != nil || !st.IsDir() {
-				dir = home
-			}
-			// --working-directory is ignored when -e is given, so cd explicitly
-			err = exec.Command("open", "-na", "Ghostty.app", "--args", "-e", "/bin/sh", "-c",
-				fmt.Sprintf("cd %q && exec %s", dir, resumeCmd(bin, s, fork))).Run()
-		case "iTerm.app":
-			script := fmt.Sprintf(`tell application "iTerm2" to tell (create window with default profile) to tell current session to write text %q`, cmds[i])
-			if tab {
-				script = fmt.Sprintf(`tell application "iTerm2" to tell current window to tell (create tab with default profile) to tell current session to write text %q`, cmds[i])
-			}
-			err = exec.Command("osascript", "-e", script).Run()
-		case "Apple_Terminal":
-			script := fmt.Sprintf(`tell application "Terminal" to do script %q`, cmds[i])
-			if tab {
-				script = fmt.Sprintf(`tell application "Terminal" to do script %q in front window`, cmds[i])
-			}
-			err = exec.Command("osascript", "-e", script).Run()
-		default:
-			c := exec.Command("pbcopy")
-			c.Stdin = strings.NewReader(strings.Join(cmds, "\n"))
-			c.Run()
-			return 0, fmt.Errorf("unknown terminal: copied %d resume commands to clipboard", len(cmds))
-		}
-		if err != nil {
-			return n, err
-		}
-		n++
-		time.Sleep(400 * time.Millisecond)
-	}
-	return n, nil
-}
-
-// openGhostty puts every session in one new Ghostty window, one tab each (Ghostty 1.3+ AppleScript).
-// With tab=true the tabs join the front window instead (a new window only if none is open).
-func openGhostty(ss []*session, bin string, tab, fork bool) (int, error) {
-	var b strings.Builder
-	b.WriteString("tell application \"Ghostty\"\n  set win to missing value\n")
-	if tab {
-		b.WriteString("  if (count of windows) > 0 then set win to front window\n")
-	}
-	for _, s := range ss {
-		dir := s.Cwd
-		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-			dir = home
-		}
-		fmt.Fprintf(&b, "  set cfg to new surface configuration\n  set initial working directory of cfg to %q\n"+
-			"  set command of cfg to %q\n  set wait after command of cfg to true\n"+
-			"  if win is missing value then\n    set win to new window with configuration cfg\n"+
-			"  else\n    new tab in win with configuration cfg\n  end if\n",
-			dir, resumeCmd(bin, s, fork))
-	}
-	b.WriteString("end tell\n")
-	if out, err := exec.Command("osascript", "-e", b.String()).CombinedOutput(); err != nil {
-		return 0, fmt.Errorf("ghostty: %s", strings.TrimSpace(string(out)))
-	}
-	return len(ss), nil
-}
-
-// deleteSessions moves transcripts (and their companion dir) to ~/.Trash/claude-sessions. Running sessions are skipped.
-func deleteSessions(ss []*session, live map[string]liveInfo) (moves []move, skipped int, err error) {
-	for _, s := range ss {
-		if _, ok := live[s.ID]; ok {
-			skipped++
-			continue
-		}
-		proj := filepath.Base(filepath.Dir(s.Path))
-		dst := filepath.Join(home, ".Trash", "claude-sessions", proj)
-		if err = os.MkdirAll(dst, 0o755); err != nil {
-			return
-		}
-		stamp := time.Now().Format("150405")
-		target := filepath.Join(dst, s.ID+".jsonl")
-		if _, e := os.Stat(target); e == nil {
-			target = filepath.Join(dst, s.ID+"-"+stamp+".jsonl")
-		}
-		if err = os.Rename(s.Path, target); err != nil {
-			return
-		}
-		mv := move{Src: s.Path, Dst: target}
-		comp := strings.TrimSuffix(s.Path, ".jsonl") // subagent/tool-result dir, if any
-		if st, e := os.Stat(comp); e == nil && st.IsDir() {
-			cd := strings.TrimSuffix(target, ".jsonl")
-			if os.Rename(comp, cd) == nil {
-				mv.CompSrc, mv.CompDst = comp, cd
-			}
-		}
-		moves = append(moves, mv)
-	}
-	return
-}
-
-func shellJoin(a ...string) string {
-	for i, s := range a {
-		a[i] = "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-	}
-	return strings.Join(a, " ")
-}
-
-func agoLong(t time.Time) string {
-	if a := ago(t); a != "now" {
-		return a + " ago"
-	}
-	return "just now"
-}
-
-// excerpt: first ask ⟶ last ask, or the LLM summary when cached.
-func (s *session) excerpt() string {
-	if s.Summary != "" {
-		return s.Summary
-	}
-	var good []string
-	for _, p := range s.PList {
-		if len(strings.Fields(p)) >= 5 {
-			good = append(good, pasteRe.ReplaceAllString(p, "[paste]"))
-		}
-	}
-	switch {
-	case len(good) == 0:
-		return s.Last
-	case len(good) == 1 || good[0] == good[len(good)-1]:
-		return good[0]
-	}
-	return clean(good[0], 55) + "  ⟶  " + clean(good[len(good)-1], 55)
-}
-
-func (s *session) hay() string {
-	if s.hayC == "" {
-		s.hayC = strings.ToLower(strings.Join(append([]string{s.label(), s.Summary, short(s.Cwd), s.PR, tagText(s.ID, " ")}, s.PList...), " "))
-	}
-	return s.hayC
-}
-
-// ───────────────────────── state ─────────────────────────
-
-type state struct {
-	Pins []string            `json:"pins"`
-	Sort string              `json:"sort"`
-	Tags map[string][]string `json:"tags,omitempty"`
-}
-
-func loadState() (map[string]bool, string) {
-	pins, sortBy := map[string]bool{}, "recent"
-	var st state
-	if b, err := os.ReadFile(stateF); err == nil && json.Unmarshal(b, &st) == nil {
-		for _, p := range st.Pins {
-			pins[p] = true
-		}
-		if st.Sort != "" {
-			sortBy = st.Sort
-		}
-		if st.Tags != nil {
-			tagStore = st.Tags
-		}
-	}
-	return pins, sortBy
-}
-
-func (m *model) saveState() {
-	st := state{Sort: sorts[m.sortIdx], Tags: tagStore}
-	for p := range m.pins {
-		st.Pins = append(st.Pins, p)
-	}
-	sort.Strings(st.Pins)
-	os.MkdirAll(cacheDir, 0o755)
-	b, _ := json.Marshal(st)
-	os.WriteFile(stateF, b, 0o644)
-}
-
 // ───────────────────────── model ─────────────────────────
 
-var sorts = []string{"recent", "dir", "prompts", "oldest", "tags"}
-
 type (
-	summaryMsg struct {
-		id, key, text string
-		err           error
-	}
 	clearMsg struct{ seq int }
 	tickMsg  time.Time
 )
@@ -614,7 +61,6 @@ type (
 type model struct {
 	all         []*session
 	rows        []*session
-	pins        map[string]bool
 	sortIdx     int
 	dirf        string
 	tagf        string // only sessions with this tag
@@ -720,7 +166,7 @@ func newModel(all []*session) model {
 	tg.PromptStyle = sAcc
 	tg.Placeholder = "space separated, empty clears · find with /#tag"
 	tg.PlaceholderStyle = sDim
-	pins, sortBy := loadState()
+	sortBy := eng.Sort()
 	idx := 0
 	for i, s := range sorts {
 		if s == sortBy {
@@ -730,95 +176,12 @@ func newModel(all []*session) model {
 	if q := strings.Join(os.Args[1:], " "); q != "" {
 		ti.SetValue(q)
 	}
-	boot := bootTime()
-	pre := preBoot(all, boot)
-	live, _ := readPidFiles()
-	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, pins: pins, sortIdx: idx, in: ti, preview: true, busy: map[string]bool{}}
+	boot := engine.BootTime()
+	pre := eng.PreBoot(all, boot)
+	live, _ := eng.ReadPids()
+	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, busy: map[string]bool{}}
 	m.refilter()
 	return m
-}
-
-func (m *model) refilter() {
-	words := strings.Fields(strings.ToLower(m.in.Value()))
-	rows := make([]*session, 0, len(m.all))
-	for _, s := range m.all {
-		if m.dirf != "" && s.Cwd != m.dirf {
-			continue
-		}
-		if m.tagf != "" && !hasTag(s.ID, m.tagf) {
-			continue
-		}
-		if m.staleOnly && !m.isStale(s) {
-			continue
-		}
-		if m.preOnly && !m.pre[s.ID] {
-			continue
-		}
-		if _, ok := m.askRank[s.ID]; m.askOnly && !ok {
-			continue
-		}
-		if m.forkOnly && !s.Fork && s.Forks == 0 {
-			continue
-		}
-		if m.liveOnly && !m.isLive(s) {
-			continue
-		}
-		h, ok := s.hay(), true
-		for _, w := range words {
-			if !strings.Contains(h, w) && !fuzzyShort(s, w) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			rows = append(rows, s)
-		}
-	}
-	less := map[string]func(a, b *session) bool{
-		"tags": func(a, b *session) bool {
-			ta, tb := firstTag(a.ID), firstTag(b.ID)
-			if ta != tb {
-				if ta == "" || tb == "" {
-					return tb == ""
-				}
-				return ta < tb
-			}
-			return a.MTime.After(b.MTime)
-		},
-		"recent":  func(a, b *session) bool { return a.MTime.After(b.MTime) },
-		"oldest":  func(a, b *session) bool { return a.MTime.Before(b.MTime) },
-		"prompts": func(a, b *session) bool { return a.Prompts > b.Prompts },
-		"dir": func(a, b *session) bool {
-			if a.Cwd != b.Cwd {
-				return short(a.Cwd) < short(b.Cwd)
-			}
-			return a.MTime.After(b.MTime)
-		},
-	}[sorts[m.sortIdx]]
-	if m.rev {
-		base := less
-		less = func(a, b *session) bool { return base(b, a) }
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if m.askOnly {
-			return m.askRank[rows[i].ID] < m.askRank[rows[j].ID]
-		}
-		pi, pj := m.pins[rows[i].ID], m.pins[rows[j].ID]
-		if pi != pj {
-			return pi
-		}
-		return less(rows[i], rows[j])
-	})
-	if m.forkOnly && !m.askOnly {
-		sortForkGroups(rows)
-	}
-	m.rows = rows
-	if m.cur >= len(rows) {
-		m.cur = len(rows) - 1
-	}
-	if m.cur < 0 {
-		m.cur = 0
-	}
 }
 
 func (m model) selected() *session {
@@ -837,38 +200,6 @@ func (m *model) flash(s string) tea.Cmd {
 
 func (m model) Init() tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
-}
-
-const prompt = "Summarize this Claude Code session in max 25 words, plain text, no preamble: " +
-	"what it was about, then where it ended or what is left. Session excerpt follows.\n\n"
-
-func summarize(s *session) tea.Cmd {
-	return func() tea.Msg {
-		summarySem <- struct{}{}
-		defer func() { <-summarySem }()
-		n := len(s.PList)
-		first, last := s.PList, s.PList
-		if n > 3 {
-			first, last = s.PList[:3], s.PList[n-3:]
-		}
-		ctx := fmt.Sprintf("Title: %s\nDir: %s\nFirst prompts:\n- %s\nLast prompts:\n- %s\nLast assistant message: %s",
-			s.label(), short(s.Cwd), strings.Join(first, "\n- "), strings.Join(last, "\n- "), s.AText)
-		c, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(c, "claude", "-p", "--model", "haiku", "--no-session-persistence", prompt+ctx)
-		cmd.Dir = os.TempDir()
-		for _, e := range os.Environ() { // an invalid ANTHROPIC_API_KEY makes claude -p 401; use the login instead
-			if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") {
-				cmd.Env = append(cmd.Env, e)
-			}
-		}
-		out, err := cmd.Output()
-		txt := clean(string(out), 300)
-		if err == nil && txt == "" {
-			err = fmt.Errorf("empty output")
-		}
-		return summaryMsg{id: s.ID, key: fmt.Sprintf("%s:%d", s.ID, s.MTime.Unix()), text: txt, err: err}
-	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -944,7 +275,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msg = ""
 		}
 	case tickMsg: // refresh what is running, keep ages fresh
-		m.live = readPidFilesFast(m.boot)
+		m.live = eng.LivePids(m.boot)
 		if m.syncStubs() || m.liveOnly {
 			sel := ""
 			if s := m.selected(); s != nil {
@@ -960,7 +291,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next := tea.Tick(5*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
 		if m.tickN++; m.tickN%6 == 0 && !m.reloading { // every 30s pick up new and changed transcripts
 			m.reloading = true
-			return m, tea.Batch(next, reloadCmd(realSessions(m.all)))
+			return m, tea.Batch(next, reloadCmd(m.all))
 		}
 		return m, next
 	case reloadMsg:
@@ -974,7 +305,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.all = msg.all
 		m.syncStubs()
-		linkForks(m.all)
+		eng.LinkForks(m.all)
 		alive := map[string]bool{}
 		for _, s := range m.all {
 			alive[s.ID] = true
@@ -1001,13 +332,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m, m.flash("summary failed: " + msg.err.Error())
 		}
-		saveSummary(msg.key, msg.text)
+		eng.StoreSummary(msg.key, msg.text)
 		var tagCmd tea.Cmd
 		for _, s := range m.all {
 			if s.ID == msg.id {
-				s.Summary = msg.text
-				s.hayC = ""
-				if len(tagStore[s.ID]) == 0 && !m.tagging { // a freshly summarized session gets tags too
+				eng.SetSummary(s, msg.text)
+				if len(eng.Tags(s.ID)) == 0 && !m.tagging { // a freshly summarized session gets tags too
 					m.tagging = true
 					tagCmd = autoTag([]*session{s})
 				}
@@ -1017,7 +347,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tagCmd
 	case briefMsg:
 		if msg.err == nil {
-			saveBrief(msg.key, msg.text)
+			eng.StoreBrief(msg.key, msg.text)
 		}
 		if m.briefOn && m.briefID == msg.id {
 			m.briefBusy = false
@@ -1038,14 +368,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sel = s.ID
 		}
 		for id, tags := range msg.res {
-			tagStore[id] = parseTags(strings.Join(append(append([]string{}, tagStore[id]...), tags...), " "))
-			for _, s := range m.all {
-				if s.ID == id {
-					s.hayC = ""
-				}
-			}
+			eng.AddTags(id, tags)
 		}
-		m.saveState()
 		m.refilter()
 		for i, r := range m.rows {
 			if r.ID == sel {
@@ -1096,18 +420,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				id := m.tagFor
 				m.tagIn.Blur()
-				if tg := parseTags(m.tagIn.Value()); len(tg) > 0 {
-					tagStore[id] = tg
-				} else {
-					delete(tagStore, id)
-				}
+				eng.SetTags(id, engine.ParseTags(m.tagIn.Value()))
 				m.tagIn.SetValue("")
-				for _, s := range m.all {
-					if s.ID == id {
-						s.hayC = ""
-					}
-				}
-				m.saveState()
 				m.refilter()
 				for i, r := range m.rows {
 					if r.ID == id {
@@ -1173,7 +487,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k := msg.String(); {
 			case k == "t" || k == "w":
 				tab := k == "t"
-				n, err := openSessions(ss, tab, p == "fork")
+				n, err := eng.Open(ss, tab, p == "fork")
 				if err != nil {
 					return m, m.flash(err.Error())
 				}
@@ -1207,15 +521,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						ss = append(ss, s)
 					}
 				}
-				moves, skipped, err := deleteSessions(ss, m.live)
-				saveUndo(moves)
-				n := len(moves)
-				gone := map[string]bool{}
-				for _, s := range ss {
-					if _, err := os.Stat(s.Path); err != nil {
-						gone[s.ID] = true
-					}
-				}
+				res, err := eng.Delete(ss, m.live)
+				n, skipped, gone := res.Moved, res.Skipped, res.Gone
 				var keep []*session
 				for _, s := range m.all {
 					if !gone[s.ID] {
@@ -1313,7 +620,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.flash("no transcript yet: ask something in that session first")
 			}
 			m.briefOn, m.briefID, m.briefScroll = true, s.ID, 0
-			if txt, ok := loadBriefs()[briefKey(s)]; ok {
+			if txt, ok := eng.BriefCached(s); ok {
 				m.brief, m.briefBusy = txt, false
 				return m, nil
 			}
@@ -1335,7 +642,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var ss []*session
 			for _, s := range m.all {
-				if m.marks[s.ID] && s.Prompts > 0 && len(ss) < autoTagMax {
+				if m.marks[s.ID] && s.Prompts > 0 && len(ss) < engine.AutoTagMax {
 					ss = append(ss, s)
 				}
 			}
@@ -1352,7 +659,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			if s := m.selected(); s != nil {
 				m.tagFor = s.ID
-				m.tagIn.SetValue(tagText(s.ID, " "))
+				m.tagIn.SetValue(eng.TagText(s.ID, " "))
 				m.tagIn.CursorEnd()
 				m.tagIn.Focus()
 				return m, textinput.Blink
@@ -1392,12 +699,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "p":
 			if s := m.selected(); s != nil {
-				if m.pins[s.ID] {
-					delete(m.pins, s.ID)
-				} else {
-					m.pins[s.ID] = true
-				}
-				m.saveState()
+				eng.TogglePin(s.ID)
 				m.refilter()
 				for i, r := range m.rows { // follow the row to its new position
 					if r.ID == s.ID {
@@ -1412,17 +714,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refilter()
 			return m, m.flash("sort: " + sorts[m.sortIdx])
 		case "#":
-			tags := tagList()
+			tags := eng.TagList()
 			if len(tags) == 0 {
 				return m, m.flash("no tags yet: t tags a session, T auto-tags")
 			}
 			next := ""
 			if m.tagf == "" {
-				next = tags[0].name
+				next = tags[0].Name
 			} else {
 				for i, tg := range tags {
-					if tg.name == m.tagf && i+1 < len(tags) {
-						next = tags[i+1].name
+					if tg.Name == m.tagf && i+1 < len(tags) {
+						next = tags[i+1].Name
 					}
 				}
 			}
@@ -1434,8 +736,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			n := 0
 			for _, tg := range tags {
-				if tg.name == next {
-					n = tg.n
+				if tg.Name == next {
+					n = tg.N
 				}
 			}
 			return m, m.flash(fmt.Sprintf("tag #%s · %d sessions · # next tag · Esc clears", next, n))
@@ -1464,7 +766,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "y":
 			if s := m.selected(); s != nil {
 				c := exec.Command("pbcopy")
-				c.Stdin = strings.NewReader(fmt.Sprintf("cd %s && claude --resume %s", short(s.Cwd), s.ID))
+				c.Stdin = strings.NewReader(fmt.Sprintf("cd %s && claude --resume %s", eng.Short(s.Cwd), s.ID))
 				if c.Run() == nil {
 					return m, m.flash("copied resume command")
 				}
@@ -1524,11 +826,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "u":
 			m.marks, m.del = map[string]bool{}, map[string]bool{}
 		case "Z":
-			n, err := undoDelete()
+			n, err := eng.Undo()
 			if n == 0 {
 				return m, m.flash("nothing to undo")
 			}
-			m.all = loadAll()
+			m.all = eng.Load()
 			m.syncStubs()
 			m.refilter()
 			text := fmt.Sprintf("restored %d sessions", n)
@@ -1577,7 +879,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.help = !m.help
 		case "r":
-			m.all = loadAll()
+			m.all = eng.Load()
 			m.syncStubs()
 			m.refilter()
 			return m, m.flash(fmt.Sprintf("reloaded %d sessions", len(m.all)))
@@ -1633,7 +935,7 @@ func (m model) View() string {
 			badge = sBad.Render("✗")
 		case m.marks[s.ID]:
 			badge = sGood.Render("✓")
-		case m.pins[s.ID]:
+		case eng.Pinned(s.ID):
 			badge = sWarn.Render("★")
 		case m.busy[s.ID]:
 			badge = sAcc.Render("◌")
@@ -1658,19 +960,19 @@ func (m model) View() string {
 		fk := sAcc.Render(forkCol(s))
 		tagCol := ""
 		if tagW > 0 {
-			tagCol = pad(tagText(s.ID, " "), tagW) + " "
+			tagCol = pad(eng.TagText(s.ID, " "), tagW) + " "
 		}
 		row := fmt.Sprintf(" %s%s %s %s %s %s%s",
 			badge, fk,
-			sDim.Render(pad(ago(s.MTime), 4)),
-			dirStyle(s).Render(pad(shortDir(s.Cwd), 20)),
+			sDim.Render(pad(engine.Ago(s.MTime), 4)),
+			dirStyle(s).Render(pad(eng.ShortDir(s.Cwd), 20)),
 			highlight(mark+rowLabel(s), words, lipgloss.NewStyle(), hiN, titleW),
 			sAcc.Render(tagCol),
 			sDim.Render(fmt.Sprintf("%4d", s.Prompts)))
 		if i == m.cur {
 			// inner styles reset the background, so rebuild the row from plain text
-			plain := fmt.Sprintf("%s%s %s %s %s %s%s", rawBadge(m, s), forkCol(s), pad(ago(s.MTime), 4),
-				pad(shortDir(s.Cwd), 20), "\x00", tagCol, fmt.Sprintf("%4d", s.Prompts))
+			plain := fmt.Sprintf("%s%s %s %s %s %s%s", rawBadge(m, s), forkCol(s), pad(engine.Ago(s.MTime), 4),
+				pad(eng.ShortDir(s.Cwd), 20), "\x00", tagCol, fmt.Sprintf("%4d", s.Prompts))
 			pre, post, _ := strings.Cut(plain, "\x00")
 			row = sCursor.Render("▌") + sSel.Render(" "+pre) + highlight(mark+rowLabel(s), words, sSel, hiS, titleW) +
 				sSel.Render(pad(post, lw-1-1-lipgloss.Width(pre)-titleW))
@@ -1694,7 +996,7 @@ func (m model) View() string {
 	// bar
 	dir := "all"
 	if m.dirf != "" {
-		dir = short(m.dirf)
+		dir = eng.Short(m.dirf)
 	}
 	nsum := 0
 	for _, s := range m.all {
@@ -1709,7 +1011,7 @@ func (m model) View() string {
 	if m.tagf != "" {
 		tagBar += " · tag #" + m.tagf
 	}
-	bar := sDim.Render(fmt.Sprintf(" sort %s · dir %s%s · ★%d · ✦%d/%d", sorts[m.sortIdx], dir, tagBar, len(m.pins), nsum, len(m.all)))
+	bar := sDim.Render(fmt.Sprintf(" sort %s · dir %s%s · ★%d · ✦%d/%d", sorts[m.sortIdx], dir, tagBar, eng.PinCount(), nsum, len(m.all)))
 	if len(m.live) > 0 {
 		busy := 0
 		for _, li := range m.live {
@@ -1806,20 +1108,20 @@ func (m model) detail(w, h int) string {
 	}
 	sec := func(name string) string { return "\n" + sHead.Render(name) + "\n" }
 	var b strings.Builder
-	b.WriteString(sBold.Render(s.label()) + "\n")
-	b.WriteString(sDim.Render(short(s.Cwd)) + "\n")
-	if dirGone(s) {
+	b.WriteString(sBold.Render(s.Label()) + "\n")
+	b.WriteString(sDim.Render(eng.Short(s.Cwd)) + "\n")
+	if eng.DirGone(s) {
 		b.WriteString(sBad.Render("✗ directory is gone, cannot resume") + "\n")
 	}
-	if tg := tagText(s.ID, " "); tg != "" {
+	if tg := eng.TagText(s.ID, " "); tg != "" {
 		b.WriteString(sAcc.Render(tg) + sDim.Render("  · t edits") + "\n")
 	}
-	b.WriteString(sDim.Render(fmt.Sprintf("%s · %s · %d prompts%s", s.MTime.Format("Mon 02 Jan 15:04"), agoLong(s.MTime), s.Prompts, span(s))) + "\n")
+	b.WriteString(sDim.Render(fmt.Sprintf("%s · %s · %d prompts%s", s.MTime.Format("Mon 02 Jan 15:04"), engine.AgoLong(s.MTime), s.Prompts, span(s))) + "\n")
 	if s.PR != "" {
 		b.WriteString(sLink.Render(s.PR) + "\n")
 	}
 	if s.ForkOf != nil {
-		b.WriteString(sAcc.Render(forkGlyph+" fork of: ") + clean(s.ForkOf.label(), 80) + sDim.Render(" · "+agoLong(s.ForkOf.MTime)) + "\n")
+		b.WriteString(sAcc.Render(forkGlyph+" fork of: ") + engine.Clean(s.ForkOf.Label(), 80) + sDim.Render(" · "+engine.AgoLong(s.ForkOf.MTime)) + "\n")
 	} else if s.Fork {
 		b.WriteString(sAcc.Render(forkGlyph+" fork") + sDim.Render(" · original not found") + "\n")
 	}
@@ -1829,7 +1131,7 @@ func (m model) detail(w, h int) string {
 	if why, ok := m.askWhy[s.ID]; ok && m.askOnly {
 		b.WriteString(sAcc.Render(fmt.Sprintf("✦ match #%d: ", m.askRank[s.ID])) + why + "\n")
 	}
-	if r := repoOf(s.Cwd).String(); r != "" {
+	if r := eng.RepoOf(s.Cwd).String(); r != "" {
 		b.WriteString(sDim.Render("⎇ "+r) + "\n")
 	}
 	if li, ok := m.live[s.ID]; ok {
@@ -1846,15 +1148,15 @@ func (m model) detail(w, h int) string {
 	default:
 		b.WriteString(sec("SUMMARY") + sDim.Render("press s to generate") + "\n")
 	}
-	b.WriteString(sec("STARTED WITH") + clean(s.First, 400) + "\n")
+	b.WriteString(sec("STARTED WITH") + engine.Clean(s.First, 400) + "\n")
 	if len(s.Turns) > 0 {
 		b.WriteString(sec("HOW IT ENDED"))
 		for _, t := range s.Turns {
 			who := sDim.Render("claude ›")
-			if t.user {
+			if t.User {
 				who = sAcc.Render("you ›")
 			}
-			b.WriteString(who + " " + t.text + "\n\n")
+			b.WriteString(who + " " + t.Text + "\n\n")
 		}
 	}
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
@@ -1877,23 +1179,23 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--snapshot":
-			st, _ := snapshot()
+			st, _ := eng.Snapshot()
 			fmt.Printf("live: %d, interrupted: %d\n", len(st.Live), len(st.Interrupted))
 			return
 		case "--install-agent":
-			if err := installAgent(); err != nil {
+			if err := eng.InstallAgent(); err != nil {
 				fmt.Println("failed:", err)
 				os.Exit(1)
 			}
-			fmt.Println("installed: snapshots running sessions every 3 min (" + agentPlist() + ")")
+			fmt.Println("installed: snapshots running sessions every 3 min (" + eng.AgentPlist() + ")")
 			return
 		case "--uninstall-agent":
-			fmt.Println("removed:", uninstallAgent() == nil)
+			fmt.Println("removed:", eng.UninstallAgent() == nil)
 			return
 		}
 	}
 	t0 := time.Now()
-	all := loadAll()
+	all := eng.Load()
 	debug.FreeOSMemory() // hand the scan's transient garbage back to the OS
 	if os.Getenv("CCS_TIME") != "" {
 		np, nt := 0, 0
@@ -1909,8 +1211,8 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "--restore" || os.Args[1] == "--restore-list") {
-		boot := bootTime()
-		pre := preBoot(all, boot)
+		boot := engine.BootTime()
+		pre := eng.PreBoot(all, boot)
 		var ss []*session
 		for _, s := range all {
 			if pre[s.ID] {
@@ -1920,10 +1222,10 @@ func main() {
 		sort.Slice(ss, func(i, j int) bool { return ss[i].MTime.After(ss[j].MTime) })
 		fmt.Printf("%d sessions were active before the reboot at %s\n", len(ss), boot.Format("Mon 02 Jan 15:04"))
 		for _, s := range ss {
-			fmt.Printf("  %s  %-22s %s\n", ago(s.MTime), shortDir(s.Cwd), clean(s.label(), 60))
+			fmt.Printf("  %s  %-22s %s\n", engine.Ago(s.MTime), eng.ShortDir(s.Cwd), engine.Clean(s.Label(), 60))
 		}
 		if os.Args[1] == "--restore" && len(ss) > 0 {
-			n, err := openSessions(ss, false, false)
+			n, err := eng.Open(ss, false, false)
 			fmt.Printf("opened %d windows\n", n)
 			if err != nil {
 				fmt.Println(err)
@@ -1952,14 +1254,14 @@ func main() {
 	}
 	args := []string{"claude", "--resume", m.result.ID}
 	if m.fork {
-		args = append(args, "--fork-session", "--name", forkName(m.result))
+		args = append(args, "--fork-session", "--name", engine.ForkName(m.result))
 	}
 	syscall.Exec(bin, args, os.Environ())
 }
 
 // dirStyle colors a row's directory red when it no longer exists.
 func dirStyle(s *session) lipgloss.Style {
-	if dirGone(s) {
+	if eng.DirGone(s) {
 		return sBad
 	}
 	return sAcc
@@ -1968,7 +1270,7 @@ func dirStyle(s *session) lipgloss.Style {
 // colWidths splits the list width: the tag column exists only while some row has tags, and never squeezes the title below 10.
 func (m model) colWidths(lw int) (titleW, tagW int) {
 	for _, s := range m.rows {
-		tagW = max(tagW, lipgloss.Width(tagText(s.ID, " ")))
+		tagW = max(tagW, lipgloss.Width(eng.TagText(s.ID, " ")))
 	}
 	tagW = min(tagW, 22, max(0, lw-2-3-5-21-5-10-1))
 	titleW = max(10, lw-2-3-5-21-5)
