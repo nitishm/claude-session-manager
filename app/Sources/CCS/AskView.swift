@@ -5,7 +5,10 @@ struct AskView: View {
     @Bindable var store: Store
     let session: Session
 
-    private static let ideas = ["What is left to do?", "Which files changed and why?", "What did we decide?", "Where did it get stuck?"]
+    private var ideas: [String] {
+        suggestedQuestions(session: session, brief: store.briefID == session.id ? store.briefData : nil, facts: store.facts[session.id],
+                           events: store.timelines[session.id]?.events ?? [], repo: store.repos[session.id])
+    }
 
     private var busy: Bool { store.qBusy.contains(session.id) }
     private var history: [Store.QA] { store.qa[session.id] ?? [] }
@@ -34,8 +37,8 @@ struct AskView: View {
                     .disabled(!canSend).clickable("ask:send", enabled: canSend).help("Ask (one model call)")
             }
             if history.isEmpty, !busy {
-                HStack(spacing: 6) {
-                    ForEach(Self.ideas, id: \.self) { idea in
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(ideas, id: \.self) { idea in
                         Button { Task { await store.askSession(session.id, idea) } } label: {
                             Text(idea).font(.caption)
                                 .padding(.horizontal, 8).padding(.vertical, 3)
