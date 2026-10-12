@@ -204,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /open", s.open)
 	m.HandleFunc("POST /ai/brief", s.aiBrief)
 	m.HandleFunc("POST /ai/ask", s.aiAsk)
+	m.HandleFunc("POST /ai/ask-session", s.aiAskSession)
 	m.HandleFunc("POST /ai/deep", s.aiDeep)
 	m.HandleFunc("POST /ai/autotag", s.aiAutoTag)
 	m.HandleFunc("GET /events", s.events)
@@ -456,6 +457,34 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 }
 
 // ───────────────────────── AI ─────────────────────────
+
+// aiAskSession answers a question about one session. It costs one model call.
+func (s *Server) aiAskSession(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ID       string `json:"id"`
+		Question string `json:"question"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	s.mu.Lock()
+	x := s.byID(b.ID)
+	s.mu.Unlock()
+	if x == nil || x.Path == "" {
+		fail(w, 404, "no such session")
+		return
+	}
+	if strings.TrimSpace(b.Question) == "" {
+		fail(w, 400, "empty question")
+		return
+	}
+	ans, err := s.eng.AskSession(x, b.Question)
+	if err != nil {
+		fail(w, 502, "ask failed: "+err.Error())
+		return
+	}
+	reply(w, 200, map[string]string{"answer": ans})
+}
 
 func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 	var b struct {

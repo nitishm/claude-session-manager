@@ -402,3 +402,14 @@ func TestTimelineEndpoint(t *testing.T) {
 		t.Errorf("unknown session = %d", c)
 	}
 }
+
+func TestAskSessionValidates(t *testing.T) {
+	ts, _, _ := setup(t)
+	var out map[string]string
+	if c := call(t, ts, "POST", "/ai/ask-session", map[string]string{"id": "nope", "question": "x"}, &out); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+	if c := call(t, ts, "POST", "/ai/ask-session", map[string]string{"id": "aaa", "question": "  "}, &out); c != 400 {
+		t.Errorf("empty question = %d", c)
+	}
+}

@@ -168,6 +168,11 @@ struct API: Sendable {
         try decode(http.request("POST", "/ai/brief", body: json(["id": AnyEncodable(id), "force": AnyEncodable(force), "cachedOnly": AnyEncodable(cachedOnly)])), BriefReply.self)
     }
 
+    func askSession(_ id: String, _ question: String) throws -> String {
+        let r = try decode(http.request("POST", "/ai/ask-session", body: json(["id": id, "question": question])), [String: String].self)
+        return r["answer"] ?? ""
+    }
+
     func facts(_ id: String) throws -> Facts { try decode(http.request("GET", "/sessions/\(id)/facts"), Facts.self) }
 
     func timeline(_ id: String) throws -> Timeline { try decode(http.request("GET", "/sessions/\(id)/timeline"), Timeline.self) }

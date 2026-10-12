@@ -89,6 +89,7 @@ struct DetailView: View {
                 if brief == nil, !store.briefBusy {
                     Text("No brief for this session.").font(.callout).foregroundStyle(.secondary)
                 }
+                if !session.stub { AskView(store: store, session: session) }
                 if let t = store.timelines[session.id], !t.events.isEmpty, !(brief != nil && store.briefData != nil) { HistoryView(store: store, events: t.events) }
                 section("Resume") {
                     Text(store.resumes[session.id] ?? "…").font(.system(.caption, design: .monospaced)).textSelection(.enabled)

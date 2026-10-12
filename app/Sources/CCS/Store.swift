@@ -130,6 +130,17 @@ final class Store {
     var briefAt = Date.distantPast
     private(set) var facts: [String: Facts] = [:]
     private(set) var timelines: [String: Timeline] = [:]
+    /// Questions asked about a session this run. Kept in memory only.
+    struct QA: Identifiable, Hashable {
+        let id = UUID()
+        let question: String
+        var answer: String
+        var failed = false
+        let at = Date()
+    }
+    private(set) var qa: [String: [QA]] = [:]
+    var qDraft: [String: String] = [:]
+    var qBusy = Set<String>()
     private(set) var repos: [String: RepoState] = [:]
     private var repoAt: [String: Date] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
@@ -295,6 +306,26 @@ final class Store {
     func loadTimeline(_ id: String) async {
         if let t = await run("history", refetch: false, { try $0.timeline(id) }) { timelines[id] = t }
     }
+
+    /// Asks one question about a session. One model call, so it only runs on an explicit send.
+    func askSession(_ id: String, _ text: String) async {
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !qBusy.contains(id) else { return }
+        qBusy.insert(id)
+        qDraft[id] = ""
+        defer { qBusy.remove(id) }
+        let api = self.api
+        var list = qa[id] ?? []
+        do {
+            let a = try await Task.detached { try api.askSession(id, q) }.value
+            list.append(QA(question: q, answer: a))
+        } catch {
+            list.append(QA(question: q, answer: error.localizedDescription, failed: true))
+        }
+        qa[id] = list
+    }
+
+    func clearQA(_ id: String) { qa[id] = nil }
 
     func loadResume(_ id: String) async {
         if let r = await run("detail", refetch: false, { try $0.session(id) }), let cmd = r.resume { resumes[id] = cmd }
