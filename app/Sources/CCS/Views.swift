@@ -79,7 +79,7 @@ struct DetailView: View {
                 header
                 actions
                 if let t = brief {
-                    if let d = store.briefData { BriefView(data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
+                    if let d = store.briefData { BriefView(store: store, session: session, data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
                 section(session.summary.isEmpty ? "First ask → last ask" : "Summary") {
@@ -116,7 +116,10 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(session.displayLabel).font(.title2.bold()).textSelection(.enabled)
             HStack(spacing: 10) {
-                Label(session.dir, systemImage: "folder").foregroundStyle(session.dirGone ? Color.red : Color.secondary)
+                Button { store.reveal(URL(fileURLWithPath: session.cwd)) } label: {
+                    Label(session.dir, systemImage: "folder").foregroundStyle(session.dirGone ? Color.red : (store.hover == "dir" ? Color.accentColor : Color.secondary))
+                }
+                .buttonStyle(.plain).onHover { store.setHover("dir", $0) }.disabled(session.dirGone).help("Reveal in Finder")
                 if !session.repo.isEmpty { Label(session.repo, systemImage: "arrow.triangle.branch") }
                 if let live = session.live { Label(live.status, systemImage: "circle.fill").foregroundStyle(.green) }
             }
@@ -133,7 +136,12 @@ struct DetailView: View {
             if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.caption).foregroundStyle(.red) }
             HStack {
                 ForEach(session.tags, id: \.self) { t in
-                    Text("#" + t).font(.caption).padding(.horizontal, 7).padding(.vertical, 2).background(.quaternary, in: Capsule())
+                    Button { store.tagFilter = t } label: {
+                        Text("#" + t).font(.caption).padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(store.hover == "tag:" + t ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
+                            .background(.quaternary, in: Capsule())
+                    }
+                    .buttonStyle(.plain).onHover { store.setHover("tag:" + t, $0) }.help("Filter the list by #\(t)")
                 }
                 Button(session.tags.isEmpty ? "Add tags" : "Edit tags") { store.editingTags = true; store.tagDraft = session.tags.joined(separator: " ") }.buttonStyle(.link).font(.caption)
             }

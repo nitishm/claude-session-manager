@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -47,6 +48,37 @@ final class Store {
             self == .ask ? "Describe the session you are looking for" : "Words that appear anywhere in the transcripts"
         }
     }
+
+    // Interaction state for the brief. Kept here because @State is unavailable without Xcode.
+    var hover: String?
+    var collapsed = Set<String>()
+
+    func setHover(_ key: String, _ on: Bool) {
+        if on { hover = key } else if hover == key { hover = nil }
+    }
+
+    func toggle(_ section: String) {
+        if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
+    }
+
+    func copy(_ text: String, note: String = "copied") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        say("\(note): \(text.count > 60 ? String(text.prefix(60)) + "…" : text)")
+    }
+
+    /// A brief names files loosely ("client.go", "~/x/y", "make suites"). Only treat it as a path if it exists.
+    func resolve(_ f: String, cwd: String) -> URL? {
+        let p = (f as NSString).expandingTildeInPath
+        let url = p.hasPrefix("/") ? URL(fileURLWithPath: p) : URL(fileURLWithPath: cwd).appendingPathComponent(p)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func openFile(_ f: String, cwd: String) {
+        if let u = resolve(f, cwd: cwd) { NSWorkspace.shared.open(u) } else { copy(f) }
+    }
+
+    func reveal(_ u: URL) { NSWorkspace.shared.activateFileViewerSelecting([u]) }
 
     // Brief popup state for the selected session.
     var briefID: String?
