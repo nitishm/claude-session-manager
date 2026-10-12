@@ -111,7 +111,6 @@ func helpPopup(w, h int) string {
 		k("O", "open marked as tabs/window"),
 		k("R", "restore after reboot"),
 		k("y", "copy resume command"),
-		k("wheel", "over the timeline box scrolls it"),
 		k("e", "open folder in Zed"),
 		k("n", "new terminal in folder"),
 		"",

@@ -101,7 +101,6 @@ type model struct {
 	dragging   bool                  // the divider is being dragged
 	briefs     map[string]briefEntry // per-session brief shown in the detail pane
 	briefGen   map[string]bool       // brief generations in flight
-	histOff    int                   // rows the timeline window is scrolled up from the newest event
 	repoSt     map[string]repoView   // branch, dirty count and PR state by session id
 	asking     bool
 	askKind    string // "" or "deep": what produced the current result list
@@ -228,7 +227,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		id = s.ID
 	}
 	if id != mm.lastSel {
-		mm.lastSel, mm.dscroll, mm.confirm, mm.histOff = id, 0, "", 0
+		mm.lastSel, mm.dscroll, mm.confirm = id, 0, ""
 	}
 	mm, bc := mm.ensureBrief()
 	mm, rc := mm.ensureRepo()
@@ -252,9 +251,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			dir := 1
 			if msg.Button == tea.MouseButtonWheelUp {
 				dir = -1
-			}
-			if dw > 0 && msg.X >= lw+2 && m.wheelHistory(msg.X, msg.Y, dw-4, -dir) {
-				return m, nil
 			}
 			if dw > 0 && msg.X >= lw {
 				m.dscroll = max(0, m.dscroll+dir*3)
@@ -1199,9 +1195,6 @@ func (m model) detailLines(w int) []string {
 	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
 	if fs := factsSection(s, w-1); fs != "" {
 		b.WriteString(fs + "\n")
-	}
-	if hs := m.historySection(s, w-1); hs != "" {
-		b.WriteString(hs + "\n")
 	}
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 
