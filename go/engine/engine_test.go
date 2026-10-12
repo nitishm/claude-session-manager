@@ -349,23 +349,18 @@ func TestParseBrief(t *testing.T) {
 	}
 }
 
-func TestBriefAttachAndFiles(t *testing.T) {
-	ex := []Exchange{{N: 1, When: "Oct 01", User: "fix the thing", Reply: "done, patched x.go"}, {N: 2, When: "Oct 02", User: "ship", Reply: "shipped"}}
-	b, ok := ParseBrief(`{"goal":"g","steps":[{"text":"a","state":"done","ref":2},{"text":"b","state":"todo","ref":9}],
-	  "timeline":[{"when":"Oct 01","text":"t","ref":1,"preview":{"n":7,"user":"FORGED"}}],
+func TestBriefKindsAndFiles(t *testing.T) {
+	b, ok := ParseBrief(`{"goal":"g","steps":[{"text":"a","state":"done","kind":"fix","outcome":"3 of 4 pass"},{"text":"b","state":"todo","kind":"nonsense"}],
+	  "timeline":[{"when":"Oct 01","text":"t","kind":"research","outcome":"found it"}],
 	  "files":["~/.aerospace.toml","src/main.go","Karabiner config JSON (hyper+c)","make suites ENV=dev","Makefile"]}`)
 	if !ok {
 		t.Fatal("not parsed")
 	}
-	b.Attach(ex)
-	if b.Steps[0].Preview == nil || b.Steps[0].Preview.User != "ship" {
-		t.Errorf("ref 2 not resolved: %+v", b.Steps[0].Preview)
+	if b.Steps[0].Kind != "fix" || b.Steps[0].Outcome != "3 of 4 pass" || b.Steps[1].Kind != "" {
+		t.Errorf("kinds not normalized: %+v", b.Steps)
 	}
-	if b.Steps[1].Preview != nil {
-		t.Errorf("unknown ref 9 got a preview")
-	}
-	if p := b.Timeline[0].Preview; p == nil || p.User != "fix the thing" {
-		t.Errorf("model-supplied preview not replaced: %+v", p)
+	if b.Timeline[0].Kind != "research" || b.Timeline[0].Outcome != "found it" {
+		t.Errorf("timeline = %+v", b.Timeline[0])
 	}
 	if len(b.Files) != 3 || b.Files[0] != "~/.aerospace.toml" || b.Files[2] != "Makefile" {
 		t.Errorf("files = %v", b.Files)

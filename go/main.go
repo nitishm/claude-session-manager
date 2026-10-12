@@ -145,6 +145,12 @@ var (
 	sHead   = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 )
 
+// hyperlink wraps text in an OSC 8 link, so terminals that support it (Ghostty, iTerm2) open it on Cmd-click.
+// Others ignore the escape and show the text unchanged.
+func hyperlink(url, text string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+}
+
 func newModel(all []*session) model {
 	ti := textinput.New()
 	ti.Prompt = " ⌕ "
@@ -711,6 +717,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		case "w":
+			if s := m.selected(); s != nil {
+				if s.PR == "" {
+					return m, m.flash("no PR link on this session")
+				}
+				if !strings.HasPrefix(s.PR, "https://") && !strings.HasPrefix(s.PR, "http://") {
+					return m, m.flash("not a web link: " + engine.Clean(s.PR, 40))
+				}
+				if err := exec.Command("open", s.PR).Start(); err != nil {
+					return m, m.flash("open failed: " + err.Error())
+				}
+				return m, m.flash("opened PR in your browser")
+			}
 		case "o":
 			m.rev = false
 			m.sortIdx = (m.sortIdx + 1) % len(sorts)
@@ -1122,7 +1141,7 @@ func (m model) detail(w, h int) string {
 	}
 	b.WriteString(sDim.Render(fmt.Sprintf("%s · %s · %d prompts%s", s.MTime.Format("Mon 02 Jan 15:04"), engine.AgoLong(s.MTime), s.Prompts, span(s))) + "\n")
 	if s.PR != "" {
-		b.WriteString(sLink.Render(s.PR) + "\n")
+		b.WriteString(hyperlink(s.PR, sLink.Render(s.PR)) + sDim.Render("  · w opens") + "\n")
 	}
 	if s.ForkOf != nil {
 		b.WriteString(sAcc.Render(forkGlyph+" fork of: ") + engine.Clean(s.ForkOf.Label(), 80) + sDim.Render(" · "+engine.AgoLong(s.ForkOf.MTime)) + "\n")

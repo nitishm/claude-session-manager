@@ -164,8 +164,8 @@ struct API: Sendable {
     }
 
     struct BriefReply: Decodable { let brief: String; let cached: Bool; let data: BriefData? }
-    func brief(_ id: String, force: Bool) throws -> BriefReply {
-        try decode(http.request("POST", "/ai/brief", body: json(["id": AnyEncodable(id), "force": AnyEncodable(force)])), BriefReply.self)
+    func brief(_ id: String, force: Bool, cachedOnly: Bool = false) throws -> BriefReply {
+        try decode(http.request("POST", "/ai/brief", body: json(["id": AnyEncodable(id), "force": AnyEncodable(force), "cachedOnly": AnyEncodable(cachedOnly)])), BriefReply.self)
     }
 
     func summarize(_ id: String) throws -> String {

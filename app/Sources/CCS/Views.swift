@@ -53,8 +53,8 @@ struct SessionRow: View {
             }
             Spacer(minLength: 8)
             ForEach(session.tags.prefix(2), id: \.self) { t in
-                Text("#" + t).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
+                Text("#" + t).font(.caption2.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Theme.tag(t).opacity(0.14), in: Capsule())
             }
             TimelineView(.periodic(from: .now, by: 30)) { ctx in
                 Text(ago(session.mtime, now: ctx.date)).foregroundStyle(.secondary).monospacedDigit()
@@ -105,7 +105,10 @@ struct DetailView: View {
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task(id: session.id) { await store.loadResume(session.id) }
+        .task(id: session.id) {
+            await store.loadResume(session.id)
+            await store.showCachedBrief(session.id)
+        }
     }
 
     private var brief: String? {
@@ -114,7 +117,7 @@ struct DetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(session.displayLabel).font(.title2.bold()).textSelection(.enabled)
+            Text(session.displayLabel).font(.system(.title, design: .rounded).weight(.bold)).textSelection(.enabled)
             HStack(spacing: 10) {
                 Button { store.reveal(URL(fileURLWithPath: session.cwd)) } label: {
                     Label(session.dir, systemImage: "folder").foregroundStyle(session.dirGone ? Color.red : (store.hover == "dir" ? Color.accentColor : Color.secondary))
@@ -137,9 +140,8 @@ struct DetailView: View {
             HStack {
                 ForEach(session.tags, id: \.self) { t in
                     Button { store.tagFilter = t } label: {
-                        Text("#" + t).font(.caption).padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(store.hover == "tag:" + t ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
-                            .background(.quaternary, in: Capsule())
+                        Text("#" + t).font(.caption.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Theme.tag(t).opacity(store.hover == "tag:" + t ? 0.28 : 0.14), in: Capsule())
                     }
                     .buttonStyle(.plain).onHover { store.setHover("tag:" + t, $0) }.help("Filter the list by #\(t)")
                 }

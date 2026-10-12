@@ -237,6 +237,14 @@ func TestAIEndpoints(t *testing.T) {
 	if br["cached"] != true {
 		t.Errorf("second brief should be cached: %v", br)
 	}
+	call(t, ts, "POST", "/ai/brief", map[string]any{"id": "bbb", "cachedOnly": true}, &br)
+	if br["data"] != nil || br["brief"] != "" {
+		t.Errorf("cachedOnly must not call the model or return anything for an uncached session: %v", br)
+	}
+	call(t, ts, "POST", "/ai/brief", map[string]any{"id": "aaa", "cachedOnly": true}, &br)
+	if br["cached"] != true || br["data"] == nil {
+		t.Errorf("cachedOnly should return the cached brief: %v", br)
+	}
 	if d, _ := br["data"].(map[string]any); d == nil || d["goal"] != "ship it" || d["status"] != "active" {
 		t.Errorf("structured data missing: %v", br["data"])
 	}

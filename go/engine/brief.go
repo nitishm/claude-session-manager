@@ -19,46 +19,35 @@ type BriefData struct {
 	Files      []string     `json:"files"`
 }
 
-// Exchange is one real prompt and the assistant's closing reply, taken from the transcript.
+// Exchange is one real prompt and the assistant's closing reply, read from the transcript to
+// build the digest the model sees.
 type Exchange struct {
-	N     int    `json:"n"`
-	When  string `json:"when"`
-	User  string `json:"user"`
-	Reply string `json:"reply"`
+	N     int
+	When  string
+	User  string
+	Reply string
 }
 
-// BriefStep is one unit of work. State is done | doing | todo. Ref is the prompt number the model
-// cited; Preview is the real exchange behind it, filled in by Attach.
+// BriefKinds are the kinds of work a step or event can be, drawn as an icon by the clients.
+var BriefKinds = map[string]bool{
+	"research": true, "diagnose": true, "build": true, "fix": true, "test": true,
+	"decide": true, "blocked": true, "ship": true, "setup": true,
+}
+
+// BriefStep is one unit of work. State is done | doing | todo. Outcome is the result in a few words.
 type BriefStep struct {
-	Text    string    `json:"text"`
-	State   string    `json:"state"`
-	Ref     int       `json:"ref"`
-	Preview *Exchange `json:"preview"`
+	Text    string `json:"text"`
+	State   string `json:"state"`
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
 }
 
 // BriefEvent is one point on the timeline. When is a short date such as "Oct 02".
 type BriefEvent struct {
-	When    string    `json:"when"`
-	Text    string    `json:"text"`
-	Ref     int       `json:"ref"`
-	Preview *Exchange `json:"preview"`
-}
-
-// Attach resolves every ref against the transcript. An unknown ref gets no preview.
-func (b *BriefData) Attach(ex []Exchange) {
-	at := func(ref int) *Exchange {
-		if ref < 1 || ref > len(ex) {
-			return nil
-		}
-		x := ex[ref-1]
-		return &x
-	}
-	for i := range b.Steps {
-		b.Steps[i].Preview = at(b.Steps[i].Ref)
-	}
-	for i := range b.Timeline {
-		b.Timeline[i].Preview = at(b.Timeline[i].Ref)
-	}
+	When    string `json:"when"`
+	Text    string `json:"text"`
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
 }
 
 // looksLikePath keeps real file paths and drops the descriptions a model sometimes puts in a files list.
@@ -101,7 +90,10 @@ func ParseBrief(txt string) (*BriefData, bool) {
 	}
 	var steps []BriefStep
 	for _, s := range b.Steps {
-		s.Text = Clean(s.Text, 70)
+		s.Text, s.Outcome = Clean(s.Text, 70), Clean(s.Outcome, 90)
+		if !BriefKinds[s.Kind] {
+			s.Kind = ""
+		}
 		if s.Text == "" || len(steps) == 10 {
 			continue
 		}
@@ -115,7 +107,10 @@ func ParseBrief(txt string) (*BriefData, bool) {
 	b.Steps = steps
 	var tl []BriefEvent
 	for _, ev := range b.Timeline {
-		ev.When, ev.Text = Clean(ev.When, 12), Clean(ev.Text, 90)
+		ev.When, ev.Text, ev.Outcome = Clean(ev.When, 12), Clean(ev.Text, 90), Clean(ev.Outcome, 90)
+		if !BriefKinds[ev.Kind] {
+			ev.Kind = ""
+		}
 		if ev.Text != "" && len(tl) < 7 {
 			tl = append(tl, ev)
 		}

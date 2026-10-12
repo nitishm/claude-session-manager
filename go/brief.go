@@ -39,28 +39,29 @@ func briefLines(text string, w int) []string {
 	return out
 }
 
-// quote renders a dim, indented excerpt of a real message, cut to maxLines with an ellipsis.
-func quote(pad, who, text string, width, maxLines int) []string {
-	if strings.TrimSpace(text) == "" {
-		return nil
+// kindGlyph is a single-width mark and a colour for each kind of work.
+func kindGlyph(kind string) (string, lipgloss.Style) {
+	switch kind {
+	case "research":
+		return "◎", sLink
+	case "diagnose":
+		return "◈", sWarn
+	case "build":
+		return "▣", sLink
+	case "fix":
+		return "✦", sGood
+	case "test":
+		return "✔", sGood
+	case "decide":
+		return "◆", sAcc
+	case "blocked":
+		return "⚠", sBad
+	case "ship":
+		return "➜", sAcc
+	case "setup":
+		return "⚙", sDim
 	}
-	lines := strings.Split(lipgloss.NewStyle().Width(max(10, width-len(who)-3)).Render(text), "\n")
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-		lines[maxLines-1] = strings.TrimRight(lines[maxLines-1], " ") + "…"
-	}
-	var out []string
-	for i, l := range lines {
-		lead := strings.Repeat(" ", len(who)+3)
-		if i == 0 {
-			lead = sAcc.Render(who) + sDim.Render(" ❝ ")
-			if who == "claude" {
-				lead = sGood.Render(who) + sDim.Render(" ❝ ")
-			}
-		}
-		out = append(out, pad+lead+sDim.Render(strings.TrimRight(l, " ")))
-	}
-	return out
+	return "●", sDim
 }
 
 // briefVisual draws a structured brief: header card, kanban columns, timeline. w is the content width.
@@ -166,8 +167,9 @@ func briefVisual(b *engine.BriefData, w int) []string {
 		const whenW = 8
 		for i, ev := range b.Timeline {
 			last := i == len(b.Timeline)-1
-			dot := sGood.Render("●")
-			if last && b.Status != "done" {
+			glyph, gs := kindGlyph(ev.Kind)
+			dot := gs.Render(glyph)
+			if last && b.Status != "done" && ev.Kind == "" {
 				dot = sWarn.Render("◐")
 				if b.Status == "active" {
 					dot = sLink.Render("◐")
@@ -183,10 +185,10 @@ func briefVisual(b *engine.BriefData, w int) []string {
 					out = append(out, sDim.Render("│  ")+strings.Repeat(" ", whenW+1)+l)
 				}
 			}
-			if ev.Preview != nil {
-				pad := sDim.Render("│  ") + strings.Repeat(" ", whenW+1)
-				out = append(out, quote(pad, "you", ev.Preview.User, w-whenW-5, 2)...)
-				out = append(out, quote(pad, "claude", ev.Preview.Reply, w-whenW-5, 2)...)
+			if ev.Outcome != "" {
+				for _, l := range wrap(ev.Outcome, w-whenW-8) {
+					out = append(out, sDim.Render("│  ")+strings.Repeat(" ", whenW+1)+sDim.Render("↳ "+strings.TrimRight(l, " ")))
+				}
 			}
 			if last && b.Status != "done" {
 				out = append(out, sDim.Render("│  ")+strings.Repeat(" ", whenW+1)+sLink.Underline(false).Render("← you are here"))

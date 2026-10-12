@@ -446,8 +446,9 @@ func (s *Server) aiSummarize(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		ID    string `json:"id"`
-		Force bool   `json:"force"`
+		ID         string `json:"id"`
+		Force      bool   `json:"force"`
+		CachedOnly bool   `json:"cachedOnly"` // never call the model; data is null when nothing is cached
 	}
 	if !decode(w, r, &b) {
 		return
@@ -464,6 +465,10 @@ func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 			reply(w, 200, briefReply(t, true))
 			return
 		}
+	}
+	if b.CachedOnly {
+		reply(w, 200, briefReply("", false))
+		return
 	}
 	txt, err := s.eng.Brief(x)
 	if err != nil {

@@ -25,7 +25,11 @@ var sample = &engine.BriefData{
 }
 
 func init() {
-	sample.Timeline[1].Preview = &engine.Exchange{N: 2, When: "Oct 02", User: "the dev suite fails on login, can you find out why", Reply: "Found it: fixtures/dev.yaml has a stale token, patched and re-ran, 3 of 4 pass now."}
+	kinds := []string{"research", "diagnose", "fix"}
+	outs := []string{"login test times out on every run", "stale token in fixtures/dev.yaml", "3 of 4 suites now pass"}
+	for i := range sample.Timeline {
+		sample.Timeline[i].Kind, sample.Timeline[i].Outcome = kinds[i], outs[i]
+	}
 }
 
 func TestBriefVisualWidths(t *testing.T) {
@@ -89,5 +93,15 @@ func TestBriefScrollStopsAtFloor(t *testing.T) {
 	press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	if m.briefScroll != 0 {
 		t.Errorf("g should go to the top, got %d", m.briefScroll)
+	}
+}
+
+func TestHyperlinkKeepsWidth(t *testing.T) {
+	u := "https://github.com/o/r/pull/12"
+	if got, want := lipgloss.Width(hyperlink(u, u)), lipgloss.Width(u); got != want {
+		t.Fatalf("OSC 8 wrapper changes the measured width: %d vs %d", got, want)
+	}
+	if !strings.Contains(hyperlink(u, "x"), "\x1b]8;;"+u) {
+		t.Fatal("link target missing")
 	}
 }

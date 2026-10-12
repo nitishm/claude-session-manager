@@ -52,7 +52,6 @@ final class Store {
     // Interaction state for the brief. Kept here because @State is unavailable without Xcode.
     var hover: String?
     var collapsed = Set<String>()
-    var expanded = Set<String>() // brief items showing their full conversation preview
 
     func setHover(_ key: String, _ on: Bool) {
         if on { hover = key } else if hover == key { hover = nil }
@@ -60,10 +59,6 @@ final class Store {
 
     func toggle(_ section: String) {
         if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
-    }
-
-    func toggleExpanded(_ key: String) {
-        if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
     }
 
     func copy(_ text: String, note: String = "copied") {
@@ -247,6 +242,16 @@ final class Store {
 
     func loadResume(_ id: String) async {
         if let r = await run("detail", refetch: false, { try $0.session(id) }), let cmd = r.resume { resumes[id] = cmd }
+    }
+
+    /// Shows a brief that is already cached for this session. Never calls the model.
+    func showCachedBrief(_ id: String) async {
+        guard briefID != id, !briefBusy else { return }
+        if let r = await run("brief", refetch: false, { try $0.brief(id, force: false, cachedOnly: true) }), r.data != nil || !r.brief.isEmpty {
+            briefID = id
+            briefText = r.brief
+            briefData = r.data
+        }
     }
 
     func loadBrief(_ id: String, force: Bool = false) async {

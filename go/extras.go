@@ -128,6 +128,7 @@ func helpPopup(w, h int) string {
 	right := []string{
 		sec("FILTER · VIEW"),
 		k("p", "pin · o sort · d dir"),
+		k("w", "open the session's PR in the browser"),
 		k("l", "running only"),
 		k("b", "before reboot"),
 		k("F", "forks + originals"),

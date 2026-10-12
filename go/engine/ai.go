@@ -347,12 +347,13 @@ Reply with ONLY one JSON object, no prose, no code fence, in exactly this shape:
  "status":"active|blocked|done|idle",
  "statusNote":"<where it stands now or what blocks it, max 14 words>",
  "next":"<the single next action, max 16 words>",
- "steps":[{"text":"<max 8 words>","state":"done|doing|todo","ref":<prompt number or 0>}],
- "timeline":[{"when":"<short date like Oct 02>","text":"<what happened, max 12 words>","ref":<prompt number or 0>}],
+ "steps":[{"text":"<max 8 words>","state":"done|doing|todo","kind":"<kind>","outcome":"<the result, max 12 words>"}],
+ "timeline":[{"when":"<short date like Oct 02>","text":"<what happened, max 8 words>","kind":"<kind>","outcome":"<the result or finding, max 12 words>"}],
  "files":["<real file path>"]}
 steps: 4 to 8 items in order, covering finished, current (at most one "doing") and remaining work.
 timeline: 3 to 6 milestones, oldest first, using the [date] tags on the prompts. The last one is the latest state.
-ref: the number N from "#N" of the user prompt that best shows where that step or milestone was discussed. 0 if none fits. Never invent numbers.
+kind is one of: research, diagnose, build, fix, test, decide, blocked, ship, setup. Pick the closest.
+outcome is what came of it, concrete and short ("3 of 4 suites pass", "stale token in dev.yaml"). For a todo step, say what it needs. Never repeat the text.
 files: up to 6 real file paths seen in the session (like ~/.aerospace.toml or src/main.go). Never descriptions or commands. [] if none.
 Be specific (names, paths, numbers). No filler.
 
@@ -376,7 +377,6 @@ func (e *Engine) Brief(s *Session) (string, error) {
 		if !ok {
 			err = fmt.Errorf("unreadable reply")
 		} else {
-			b.Attach(ex) // previews come from the real transcript, never from the model
 			if j, merr := json.Marshal(b); merr == nil {
 				txt = string(j) // store the cleaned, bounded form
 			}
