@@ -215,18 +215,6 @@ func TestAIEndpoints(t *testing.T) {
 		t.Errorf("deep = %v", deep)
 	}
 
-	fakeClaude(t, "A short summary.")
-	var sm map[string]string
-	call(t, ts, "POST", "/ai/summarize", map[string]string{"id": "aaa"}, &sm)
-	if sm["summary"] != "A short summary." {
-		t.Errorf("summary = %v", sm)
-	}
-	var v SessionView
-	call(t, ts, "GET", "/sessions/aaa", nil, &v)
-	if v.Summary != "A short summary." {
-		t.Errorf("summary not stored on session: %q", v.Summary)
-	}
-
 	fakeClaude(t, `{"goal":"ship it","status":"active","steps":[{"text":"a","state":"done"}]}`)
 	var br map[string]any
 	call(t, ts, "POST", "/ai/brief", map[string]any{"id": "aaa"}, &br)
@@ -262,7 +250,7 @@ func TestAIFailureIs502(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	if c := call(t, ts, "POST", "/ai/summarize", map[string]string{"id": "aaa"}, &map[string]string{}); c != 502 {
+	if c := call(t, ts, "POST", "/ai/brief", map[string]any{"id": "aaa"}, &map[string]any{}); c != 502 {
 		t.Errorf("status %d", c)
 	}
 }

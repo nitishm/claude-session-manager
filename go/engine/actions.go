@@ -26,11 +26,6 @@ func ResumeCmd(bin string, s *Session, fork bool) string {
 	return shellJoin(a...)
 }
 
-// ───────────────────────── summary store ─────────────────────────
-
-// SummaryKey is the cache key of a session's summary; it changes when the session does.
-func SummaryKey(s *Session) string { return summaryKey(s) }
-
 // ───────────────────────── open ─────────────────────────
 
 func (e *Engine) workDir(s *Session) string {

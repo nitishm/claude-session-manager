@@ -199,7 +199,6 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /delete", s.del)
 	m.HandleFunc("POST /undo", s.undo)
 	m.HandleFunc("POST /open", s.open)
-	m.HandleFunc("POST /ai/summarize", s.aiSummarize)
 	m.HandleFunc("POST /ai/brief", s.aiBrief)
 	m.HandleFunc("POST /ai/ask", s.aiAsk)
 	m.HandleFunc("POST /ai/deep", s.aiDeep)
@@ -418,31 +417,6 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 }
 
 // ───────────────────────── AI ─────────────────────────
-
-func (s *Server) aiSummarize(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		ID string `json:"id"`
-	}
-	if !decode(w, r, &b) {
-		return
-	}
-	s.mu.Lock()
-	x := s.byID(b.ID)
-	s.mu.Unlock()
-	if x == nil || x.Path == "" {
-		fail(w, 404, "no such session")
-		return
-	}
-	txt, err := s.eng.Summarize(x)
-	if err != nil {
-		fail(w, 502, "summary failed: "+err.Error())
-		return
-	}
-	s.mu.Lock()
-	s.eng.SetSummary(x, txt)
-	s.mu.Unlock()
-	reply(w, 200, map[string]string{"summary": txt})
-}
 
 func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 	var b struct {

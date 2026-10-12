@@ -31,7 +31,7 @@ curl -s --unix-socket ~/.cache/ccs/ccsd.sock 'http://x/sessions?q=login&sort=rec
 | `GET /sessions/{id}`, `/live`, `/tags`, `/health` | detail, running sessions, tag counts |
 | `POST /sessions/{id}/pin`, `PUT /sessions/{id}/tags` | pin toggle, replace tags |
 | `POST /delete`, `/undo`, `/open` | trash, restore, open in terminal |
-| `POST /ai/{summarize,brief,ask,deep,autotag}` | Claude-backed; `deep` is a plain transcript scan |
+| `POST /ai/{brief,ask,deep,autotag}` | Claude-backed; `deep` is a plain transcript scan |
 | `GET /events` | server-sent events: `sessions` or `live` means refetch |
 
 The JSON keys are the contract with the Mac app (`TestJSONContractKeys` pins them). Add fields, never rename.

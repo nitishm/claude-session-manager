@@ -40,29 +40,6 @@ func (e *Engine) slot() func() {
 	return func() { <-e.sem }
 }
 
-// ───────────────────────── summarize ─────────────────────────
-
-const summarizePrompt = "Summarize this Claude Code session in max 25 words, plain text, no preamble: " +
-	"what it was about, then where it ended or what is left. Session excerpt follows.\n\n"
-
-// Summarize returns a one-line summary of s. Save it with StoreSummary(SummaryKey(s), text).
-func (e *Engine) Summarize(s *Session) (string, error) {
-	defer e.slot()()
-	n := len(s.PList)
-	first, last := s.PList, s.PList
-	if n > 3 {
-		first, last = s.PList[:3], s.PList[n-3:]
-	}
-	ctx := fmt.Sprintf("Title: %s\nDir: %s\nFirst prompts:\n- %s\nLast prompts:\n- %s\nLast assistant message: %s",
-		s.Label(), e.Short(s.Cwd), strings.Join(first, "\n- "), strings.Join(last, "\n- "), s.AText)
-	out, err := runClaude(summarizePrompt+ctx, 60*time.Second)
-	txt := Clean(out, 300)
-	if err == nil && txt == "" {
-		err = fmt.Errorf("empty output")
-	}
-	return txt, err
-}
-
 // ───────────────────────── ask ─────────────────────────
 
 const askMaxSessions = 400
