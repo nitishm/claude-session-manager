@@ -1171,17 +1171,6 @@ func (m model) detail(w, h int) string {
 	default:
 		b.WriteString(sec("SUMMARY") + sDim.Render("press s to generate") + "\n")
 	}
-	b.WriteString(sec("STARTED WITH") + engine.Clean(s.First, 400) + "\n")
-	if len(s.Turns) > 0 {
-		b.WriteString(sec("HOW IT ENDED"))
-		for _, t := range s.Turns {
-			who := sDim.Render("claude ›")
-			if t.User {
-				who = sAcc.Render("you ›")
-			}
-			b.WriteString(who + " " + t.Text + "\n\n")
-		}
-	}
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 
 	lines := strings.Split(lipgloss.NewStyle().Width(w).Render(b.String()), "\n")
