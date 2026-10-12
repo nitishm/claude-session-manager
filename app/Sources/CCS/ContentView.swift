@@ -11,6 +11,7 @@ struct ContentView: View {
         .searchable(text: $store.query, placement: .toolbar, prompt: "Search title, dir, tags, prompts")
         .toolbar { toolbar }
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbar(removing: .title)
         .safeAreaInset(edge: .bottom) { statusBar }
         .sheet(isPresented: $store.editingTags) {
             if let s = store.single { TagEditor(store: store, session: s) }
