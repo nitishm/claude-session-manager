@@ -95,6 +95,10 @@ type model struct {
 	reloading  bool
 	askIn      textinput.Model
 	tagIn      textinput.Model
+	qIn        textinput.Model // the question box for Q
+	qFor       string          // session the question box is for
+	qa         map[string][]qaItem
+	qBusy      map[string]bool
 	tagFor     string                // session ID being tagged
 	tagging    bool                  // an auto-tag call is running
 	split      int                   // list width as a percent of the screen; 0 means the default
@@ -178,6 +182,11 @@ func newModel(all []*session) model {
 	di.PromptStyle = sAcc
 	di.Placeholder = "words that appear anywhere in your messages or claude's replies (reads every transcript)"
 	di.PlaceholderStyle = sDim
+	qi := textinput.New()
+	qi.Prompt = " ? ask this session "
+	qi.PromptStyle = sAcc
+	qi.Placeholder = "what is left? which files changed? what did we decide?"
+	qi.PlaceholderStyle = sDim
 	tg := textinput.New()
 	tg.Prompt = " # tags "
 	tg.PromptStyle = sAcc
@@ -196,7 +205,7 @@ func newModel(all []*session) model {
 	boot := engine.BootTime()
 	pre := eng.PreBoot(all, boot)
 	live, _ := eng.ReadPids()
-	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}, repoSt: map[string]repoView{}}
+	m := model{qIn: qi, qa: map[string][]qaItem{}, qBusy: map[string]bool{}, askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}, repoSt: map[string]repoView{}}
 	m.refilter()
 	return m
 }
@@ -354,6 +363,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case qaMsg:
+		delete(m.qBusy, msg.id)
+		it := qaItem{q: msg.q, a: msg.a}
+		if msg.err != nil {
+			it.a, it.failed = msg.err.Error(), true
+		}
+		m.qa[msg.id] = append(m.qa[msg.id], it)
+		return m, nil
 	case repoWantMsg:
 		if s := m.selected(); s != nil && s.ID == msg.id {
 			return m, fetchRepo(s)
@@ -441,6 +458,32 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var c tea.Cmd
 			m.deepIn, c = m.deepIn.Update(msg)
+			return m, c
+		}
+		if m.qIn.Focused() {
+			switch msg.String() {
+			case "enter":
+				q := strings.TrimSpace(m.qIn.Value())
+				id := m.qFor
+				m.qIn.Blur()
+				m.qIn.SetValue("")
+				if q == "" || m.qBusy[id] {
+					return m, nil
+				}
+				for _, r := range m.all {
+					if r.ID == id {
+						m.qBusy[id] = true
+						return m, tea.Batch(askThisSession(r, q), m.flash("asking claude… (5-15s)"))
+					}
+				}
+				return m, nil
+			case "esc":
+				m.qIn.SetValue("")
+				m.qIn.Blur()
+				return m, nil
+			}
+			var c tea.Cmd
+			m.qIn, c = m.qIn.Update(msg)
 			return m, c
 		}
 		if m.tagIn.Focused() {
@@ -736,6 +779,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.flash("open failed: " + err.Error())
 				}
 				return m, m.flash("opened PR in your browser")
+			}
+		case "Q":
+			if s := m.selected(); s != nil {
+				if s.Path == "" || s.Prompts == 0 {
+					return m, m.flash("nothing to ask about yet")
+				}
+				if m.qBusy[s.ID] {
+					return m, m.flash("still answering the last question…")
+				}
+				m.qFor = s.ID
+				m.qIn.Focus()
+				return m, textinput.Blink
 			}
 		case "e":
 			if s := m.selected(); s != nil {
@@ -1099,6 +1154,8 @@ func (m model) View() string {
 	box := m.in.View()
 	if m.deepIn.Focused() {
 		box = m.deepIn.View()
+	} else if m.qIn.Focused() {
+		box = m.qIn.View()
 	} else if m.tagIn.Focused() {
 		box = m.tagIn.View()
 	} else if m.askIn.Focused() {
@@ -1191,6 +1248,9 @@ func (m model) detailLines(w int) []string {
 		b.WriteString(st.Render(fmt.Sprintf("%s running now · pid %d · %s", g, li.PID, li.Status)) + "\n")
 	} else if m.pre[s.ID] {
 		b.WriteString(sWarn.Render("↻ was open when the machine restarted") + "\n")
+	}
+	if as := askSection(m.qa[s.ID], m.qBusy[s.ID], w-1); as != "" {
+		b.WriteString(as + "\n")
 	}
 	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
 	if fs := factsSection(s, w-1); fs != "" {

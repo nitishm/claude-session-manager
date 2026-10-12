@@ -127,7 +127,7 @@ func actionRow(s *session) string {
 	if s.PR != "" {
 		parts = append(parts, sLink.Render("↗PR"))
 	}
-	return strings.Join(parts, sDim.Render("  ·  ")) + sDim.Render("   keys e n y w")
+	return strings.Join(parts, sDim.Render("  ·  ")) + sDim.Render("   keys e n y w Q")
 }
 
 // runAction runs one action-row entry for s.
