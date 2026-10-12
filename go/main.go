@@ -101,6 +101,7 @@ type model struct {
 	dragging   bool                  // the divider is being dragged
 	briefs     map[string]briefEntry // per-session brief shown in the detail pane
 	briefGen   map[string]bool       // brief generations in flight
+	repoSt     map[string]repoView   // branch, dirty count and PR state by session id
 	asking     bool
 	askKind    string // "" or "deep": what produced the current result list
 	deepIn     textinput.Model
@@ -195,7 +196,7 @@ func newModel(all []*session) model {
 	boot := engine.BootTime()
 	pre := eng.PreBoot(all, boot)
 	live, _ := eng.ReadPids()
-	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}}
+	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}, repoSt: map[string]repoView{}}
 	m.refilter()
 	return m
 }
@@ -229,7 +230,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mm.lastSel, mm.dscroll, mm.confirm = id, 0, ""
 	}
 	mm, bc := mm.ensureBrief()
-	return mm, tea.Batch(cmd, bc)
+	mm, rc := mm.ensureRepo()
+	return mm, tea.Batch(cmd, bc, rc)
 }
 
 func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -351,6 +353,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cur = i
 			}
 		}
+		return m, nil
+	case repoWantMsg:
+		if s := m.selected(); s != nil && s.ID == msg.id {
+			return m, fetchRepo(s)
+		}
+		delete(m.repoSt, msg.id) // moved away before the delay ended
+		return m, nil
+	case repoMsg:
+		m.repoSt[msg.id] = repoView{st: msg.st, at: time.Now(), ok: true}
 		return m, nil
 	case briefWantMsg:
 		// Only generate if the cursor stayed on the session, so scrolling past sessions costs nothing.
@@ -1171,6 +1182,9 @@ func (m model) detailLines(w int) []string {
 	}
 	if r := eng.RepoOf(s.Cwd).String(); r != "" {
 		b.WriteString(sDim.Render("⎇ "+r) + "\n")
+	}
+	if rs := repoLine(m.repoSt[s.ID]); rs != "" {
+		b.WriteString(rs + "\n")
 	}
 	if li, ok := m.live[s.ID]; ok {
 		g, st := liveGlyph(li)

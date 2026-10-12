@@ -30,6 +30,8 @@ type Engine struct {
 	factsMu sync.Mutex
 	facts   map[string]*Facts // transcript facts by session id and mtime
 
+	repoStates map[string]repoStateEntry // slow jj/git/gh results, guarded by mu
+
 	sem chan struct{} // limits parallel claude -p calls
 }
 

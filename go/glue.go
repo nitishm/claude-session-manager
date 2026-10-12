@@ -34,7 +34,12 @@ type (
 		err           error
 	}
 	briefWantMsg struct{ id string }
-	askMsg       struct {
+	repoWantMsg  struct{ id string }
+	repoMsg      struct {
+		id string
+		st engine.RepoState
+	}
+	askMsg struct {
 		kind  string // "" = ask claude, "deep" = transcript scan
 		query string
 		hits  []engine.Hit

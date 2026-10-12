@@ -129,6 +129,8 @@ final class Store {
     var briefStale = false
     var briefAt = Date.distantPast
     private(set) var facts: [String: Facts] = [:]
+    private(set) var repos: [String: RepoState] = [:]
+    private var repoAt: [String: Date] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
     private var pending: Task<Void, Never>?
@@ -280,6 +282,13 @@ final class Store {
 
     func loadFacts(_ id: String) async {
         if let f = await run("facts", refetch: false, { try $0.facts(id) }) { facts[id] = f }
+    }
+
+    /// Branch, dirty count and PR state. Shells out in ccsd, so it is fetched once a minute at most per session.
+    func loadRepo(_ id: String) async {
+        if let t = repoAt[id], Date().timeIntervalSince(t) < 60, repos[id] != nil { return }
+        repoAt[id] = Date()
+        if let r = await run("repo", refetch: false, { try $0.repo(id) }) { repos[id] = r } else { repoAt[id] = nil }
     }
 
     func loadResume(_ id: String) async {

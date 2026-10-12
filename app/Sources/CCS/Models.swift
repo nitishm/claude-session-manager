@@ -196,3 +196,25 @@ func duration(_ min: Int) -> String {
     if min < 60 { return "\(min)m" }
     return min % 60 == 0 ? "\(min / 60)h" : "\(min / 60)h \(min % 60)m"
 }
+
+struct PRState: Codable, Hashable {
+    let state: String
+    let draft: Bool
+    let review: String
+    let checks: String
+    let passed: Int
+    let failed: Int
+    let pending: Int
+    let title: String
+}
+
+/// Live working-copy and PR state from `GET /sessions/{id}/repo`. Slow, so it loads apart from the session.
+struct RepoState: Codable, Hashable {
+    let kind: String
+    let branch: String
+    let dirty: Int
+    let ahead: Int
+    let behind: Int
+    let pr: PRState?
+    let err: String?
+}

@@ -170,6 +170,8 @@ struct API: Sendable {
 
     func facts(_ id: String) throws -> Facts { try decode(http.request("GET", "/sessions/\(id)/facts"), Facts.self) }
 
+    func repo(_ id: String) throws -> RepoState { try decode(http.request("GET", "/sessions/\(id)/repo"), RepoState.self) }
+
     func ask(_ query: String) throws -> [Hit] { try decode(http.request("POST", "/ai/ask", body: json(["query": query])), [Hit].self) }
     func deep(_ query: String) throws -> [Hit] { try decode(http.request("POST", "/ai/deep", body: json(["query": query])), [Hit].self) }
 

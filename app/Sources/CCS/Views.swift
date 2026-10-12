@@ -79,6 +79,7 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 actions
+                if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r) }
                 if brief != nil, store.briefStale { staleBanner }
                 if let t = brief {
                     if let d = store.briefData { BriefView(store: store, session: session, data: d, facts: store.facts[session.id]) } else { section("Brief") { Text(t).textSelection(.enabled) } }
@@ -98,6 +99,7 @@ struct DetailView: View {
         .task(id: session.id) {
             await store.loadResume(session.id)
             await store.loadFacts(session.id)
+            await store.loadRepo(session.id)
             await store.ensureBrief(session.id, canMake: !session.stub)
         }
     }
@@ -231,5 +233,55 @@ struct FlowTags: View {
                 Button("#" + t) { tap(t) }.buttonStyle(.bordered).controlSize(.small).clickable()
             }
         }
+    }
+}
+
+/// Branch, change count and PR state as chips. Click the PR chip to open it.
+struct RepoStrip: View {
+    @Bindable var store: Store
+    let session: Session
+    let repo: RepoState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if repo.kind != "" {
+                chip("arrow.triangle.branch", repo.branch.isEmpty ? "no \(repo.kind == "jj" ? "bookmark" : "branch")" : repo.branch, .accentColor)
+                if repo.dirty > 0 { chip("pencil", "\(repo.dirty) changed", .orange) } else { chip("checkmark", "clean", .secondary) }
+                if repo.ahead > 0 || repo.behind > 0 { chip("arrow.up.arrow.down", "\(repo.ahead) ahead, \(repo.behind) behind", .secondary) }
+            }
+            if let p = repo.pr { prChip(p) }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func prChip(_ p: PRState) -> some View {
+        let color: Color = p.state == "MERGED" ? .purple : p.state == "CLOSED" || p.checks == "failing" || p.review == "CHANGES_REQUESTED" ? .red : .green
+        var bits = [p.draft ? "draft" : p.state.lowercased()]
+        switch p.checks {
+        case "failing": bits.append("\(p.failed) checks failing")
+        case "pending": bits.append("\(p.pending) checks running")
+        case "passing": bits.append("checks pass")
+        default: break
+        }
+        switch p.review {
+        case "APPROVED": bits.append("approved")
+        case "CHANGES_REQUESTED": bits.append("changes requested")
+        case "REVIEW_REQUIRED": bits.append("needs review")
+        default: break
+        }
+        return Button {
+            if let u = URL(string: session.pr) { NSWorkspace.shared.open(u) }
+        } label: {
+            label("arrow.triangle.pull", "PR " + bits.joined(separator: ", "), color, hot: store.hover == "repo:pr")
+        }
+        .buttonStyle(.plain).onHover { store.setHover("repo:pr", $0) }.clickable("repo:pr").help(p.title)
+    }
+
+    private func chip(_ symbol: String, _ text: String, _ color: Color) -> some View { label(symbol, text, color, hot: false) }
+
+    private func label(_ symbol: String, _ text: String, _ color: Color, hot: Bool) -> some View {
+        Label(text, systemImage: symbol).font(.caption.weight(.medium)).foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(color.opacity(hot ? 0.28 : 0.14), in: Capsule())
     }
 }

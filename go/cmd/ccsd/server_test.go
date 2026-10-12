@@ -377,3 +377,14 @@ func TestFactsEndpoint(t *testing.T) {
 		t.Errorf("unknown session = %d", c)
 	}
 }
+
+func TestRepoEndpoint(t *testing.T) {
+	ts, _, _ := setup(t)
+	var r engine.RepoState
+	if c := call(t, ts, "GET", "/sessions/aaa/repo", nil, &r); c != 200 {
+		t.Fatalf("status %d", c)
+	}
+	if c := call(t, ts, "GET", "/sessions/nope/repo", nil, &r); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+}
