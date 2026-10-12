@@ -22,7 +22,12 @@ struct BriefView: View {
             hero
             tiles
             if let facts { FactsView(store: store, session: session, facts: facts) }
-            if !data.timeline.isEmpty { fold("timeline", "Timeline", "\(data.timeline.count) milestones") { timeline } }
+            if let ev = store.timelines[session.id]?.events, !ev.isEmpty {
+                fold("timeline", "Timeline", "\(ev.count) events") { HistoryView(store: store, events: ev, embedded: true) }
+                if !data.timeline.isEmpty { fold("milestones", "Key outcomes", "\(data.timeline.count)") { timeline } }
+            } else if !data.timeline.isEmpty {
+                fold("timeline", "Timeline", "\(data.timeline.count) milestones") { timeline }
+            }
             if !data.steps.isEmpty { fold("steps", "Steps", "\(data.progress.done)/\(data.steps.count) done") { kanban } }
             if !data.files.isEmpty, facts?.files.isEmpty ?? true { fold("files", "Files", "\(data.files.count)") { files } }
         }

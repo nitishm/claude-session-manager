@@ -5,6 +5,7 @@ import SwiftUI
 struct HistoryView: View {
     @Bindable var store: Store
     let events: [TLEvent]
+    var embedded = false // inside the brief's Timeline fold, which already has a title
 
     private static let recent = 12
     private var all: Bool { store.collapsed.contains("history:all") }
@@ -13,8 +14,10 @@ struct HistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("History").font(.headline)
-                Text("\(events.count) events").font(.caption).foregroundStyle(.secondary)
+                if !embedded {
+                    Text("History").font(.headline)
+                    Text("\(events.count) events").font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if events.count > Self.recent {
                     Button(all ? "Show latest" : "Show all \(events.count)") { store.toggle("history:all") }
