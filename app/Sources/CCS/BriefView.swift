@@ -208,7 +208,7 @@ struct BriefView: View {
     @ViewBuilder private func file(_ f: String) -> some View {
         let url = store.resolve(f, cwd: session.cwd)
         let key = "file:" + f
-        Button { if let url { NSWorkspace.shared.open(url) } } label: {
+        Button { store.openFile(f, cwd: session.cwd) } label: {
             Label {
                 Text(f).lineLimit(1).truncationMode(.middle)
             } icon: {
@@ -224,7 +224,7 @@ struct BriefView: View {
         .help(url.map { "Open " + $0.path } ?? "Not found under \(session.dir)")
         .contextMenu {
             if let url {
-                Button("Open") { NSWorkspace.shared.open(url) }
+                Button("Open in Zed") { store.openFile(f, cwd: session.cwd) }
                 Button("Reveal in Finder") { store.reveal(url) }
             }
         }

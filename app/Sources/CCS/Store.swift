@@ -74,8 +74,17 @@ final class Store {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Code and config files open in Zed, not whatever app owns the extension. Folders keep the default (Finder).
     func openFile(_ f: String, cwd: String) {
-        if let u = resolve(f, cwd: cwd) { NSWorkspace.shared.open(u) } else { copy(f) }
+        guard let u = resolve(f, cwd: cwd) else { copy(f); return }
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: u.path, isDirectory: &isDir)
+        let zed = URL(fileURLWithPath: "/Applications/Zed.app")
+        if !isDir.boolValue, FileManager.default.fileExists(atPath: zed.path) {
+            NSWorkspace.shared.open([u], withApplicationAt: zed, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(u)
+        }
     }
 
     func reveal(_ u: URL) { NSWorkspace.shared.activateFileViewerSelecting([u]) }
