@@ -161,7 +161,9 @@ struct DetailView: View {
 
     private var actions: some View {
         HStack {
-            Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume", systemImage: "play.fill") }
+            Button { Task { await store.resumeOrFocus(session) } } label: {
+                Label(session.live != nil ? "Go to window" : "Resume", systemImage: session.live != nil ? "macwindow" : "play.fill")
+            }
                 .buttonStyle(.borderedProminent).disabled(session.dirGone || session.stub).clickable("act:resume", enabled: !(session.dirGone || session.stub))
             Button { Task { await store.open([session.id], fork: true) } } label: { Label("Fork", systemImage: "arrow.triangle.branch") }
                 .disabled(session.dirGone || session.stub).clickable("act:fork", enabled: !(session.dirGone || session.stub))

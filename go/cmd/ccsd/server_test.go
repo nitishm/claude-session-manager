@@ -413,3 +413,14 @@ func TestAskSessionValidates(t *testing.T) {
 		t.Errorf("empty question = %d", c)
 	}
 }
+
+func TestFocusNotRunning(t *testing.T) {
+	ts, _, _ := setup(t)
+	var out map[string]any
+	if c := call(t, ts, "POST", "/sessions/aaa/focus", nil, &out); c != 200 || out["focused"] != false {
+		t.Errorf("a session that is not running is not focused: %d %v", c, out)
+	}
+	if c := call(t, ts, "POST", "/sessions/nope/focus", nil, &out); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+}

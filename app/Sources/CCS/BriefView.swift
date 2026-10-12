@@ -59,7 +59,7 @@ struct BriefView: View {
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.violet.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-                Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume session", systemImage: "play.fill") }
+                Button { Task { await store.resumeOrFocus(session) } } label: { Label(session.live != nil ? "Go to window" : "Resume session", systemImage: session.live != nil ? "macwindow" : "play.fill") }
                     .buttonStyle(.borderedProminent).tint(Theme.violet).controlSize(.regular).disabled(!canResume).clickable("hero:resume", enabled: canResume)
             }
         }

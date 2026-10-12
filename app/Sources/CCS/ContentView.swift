@@ -49,7 +49,7 @@ struct ContentView: View {
             .overlay { if store.rows.isEmpty, store.conn == .ok { empty } }
             .onKeyPress(.return) {
                 guard !store.selection.isEmpty else { return .ignored }
-                Task { await store.open(Array(store.selection), fork: false) }
+                Task { await store.resume(Array(store.selection)) }
                 return .handled
             }
         }
@@ -76,7 +76,7 @@ struct ContentView: View {
 
     @ViewBuilder private func rowMenu(_ s: Session) -> some View {
         let ids = store.selection.contains(s.id) ? Array(store.selection) : [s.id]
-        Button("Resume") { Task { await store.open(ids, fork: false) } }
+        Button("Resume") { Task { await store.resume(ids) } }
         Button("Fork") { Task { await store.open(ids, fork: true) } }
         Divider()
         Button(s.pinned ? "Unpin" : "Pin") { Task { await store.pin(ids) } }

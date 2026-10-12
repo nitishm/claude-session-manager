@@ -35,7 +35,12 @@ type (
 	}
 	briefWantMsg struct{ id string }
 	repoWantMsg  struct{ id string }
-	repoMsg      struct {
+	focusMsg     struct {
+		id  string
+		ok  bool
+		err error
+	}
+	repoMsg struct {
 		id string
 		st engine.RepoState
 	}
@@ -128,3 +133,12 @@ func (m *model) refilter() {
 func (m *model) saveState() { eng.SetSort(engine.Sorts[m.sortIdx]) }
 
 var sorts = engine.Sorts
+
+// focusSession switches to the Ghostty window that holds a running session.
+func focusSession(s *session, li engine.LiveInfo) tea.Cmd {
+	cp := *s
+	return func() tea.Msg {
+		ok, err := eng.FocusSession(&cp, li)
+		return focusMsg{id: cp.ID, ok: ok, err: err}
+	}
+}

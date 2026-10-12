@@ -173,6 +173,10 @@ struct API: Sendable {
         return r["answer"] ?? ""
     }
 
+    struct FocusReply: Decodable { let focused: Bool; let running: Bool; let error: String? }
+
+    func focus(_ id: String) throws -> FocusReply { try decode(http.request("POST", "/sessions/\(id)/focus"), FocusReply.self) }
+
     func facts(_ id: String) throws -> Facts { try decode(http.request("GET", "/sessions/\(id)/facts"), Facts.self) }
 
     func timeline(_ id: String) throws -> Timeline { try decode(http.request("GET", "/sessions/\(id)/timeline"), Timeline.self) }

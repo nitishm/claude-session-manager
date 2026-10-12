@@ -202,6 +202,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /delete", s.del)
 	m.HandleFunc("POST /undo", s.undo)
 	m.HandleFunc("POST /open", s.open)
+	m.HandleFunc("POST /sessions/{id}/focus", s.focus)
 	m.HandleFunc("POST /ai/brief", s.aiBrief)
 	m.HandleFunc("POST /ai/ask", s.aiAsk)
 	m.HandleFunc("POST /ai/ask-session", s.aiAskSession)
@@ -413,6 +414,32 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	s.publish("sessions")
 	out := map[string]any{"restored": n}
+	if err != nil {
+		out["error"] = err.Error()
+	}
+	reply(w, 200, out)
+}
+
+// focus switches to the Ghostty window of a running session instead of opening a second copy.
+func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	var li engine.LiveInfo
+	var running bool
+	if x != nil {
+		li, running = s.live[x.ID]
+	}
+	s.mu.Unlock()
+	if x == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	if !running {
+		reply(w, 200, map[string]any{"focused": false, "running": false})
+		return
+	}
+	ok, err := s.eng.FocusSession(x, li)
+	out := map[string]any{"focused": ok, "running": true}
 	if err != nil {
 		out["error"] = err.Error()
 	}

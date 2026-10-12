@@ -106,9 +106,22 @@ final class Store {
             let sys = URL(fileURLWithPath: "/System/Applications/\(app).app")
             for cand in [a, sys] where FileManager.default.fileExists(atPath: cand.path) {
                 if app == "Ghostty" {
+                    // Script the running Ghostty. `open -na` would start a second, windowless instance.
+                    let script = """
+                    tell application "Ghostty"
+                        set cfg to new surface configuration
+                        set initial working directory of cfg to "\(dir.replacingOccurrences(of: "\"", with: "\\\""))"
+                        if (count of windows) > 0 then
+                            new tab in front window with configuration cfg
+                        else
+                            new window with configuration cfg
+                        end if
+                        activate
+                    end tell
+                    """
                     let p = Process()
-                    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                    p.arguments = ["-na", "Ghostty", "--args", "--working-directory=" + dir]
+                    p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                    p.arguments = ["-e", script]
                     try? p.run()
                 } else {
                     NSWorkspace.shared.open([u], withApplicationAt: cand, configuration: NSWorkspace.OpenConfiguration())
@@ -272,6 +285,31 @@ final class Store {
         guard let r = await run("open", refetch: false, { try $0.open(ids, tab: tab, fork: fork) }) else { return }
         if let e = r.error { say(e) } else if r.skipped > 0 { say("opened \(r.opened), skipped \(r.skipped) (directory gone or no transcript)") } else {
             say("opened \(r.opened) in your terminal")
+        }
+    }
+
+    /// A running session is switched to, not opened a second time. When its Ghostty window cannot be found,
+    /// the first click says so and a second click within a few seconds resumes it anyway.
+    private var focusMissed: String?
+
+    /// Resume from the list or a menu: one running session is switched to, anything else is opened.
+    func resume(_ ids: [String]) async {
+        if ids.count == 1, let s = rows.first(where: { $0.id == ids[0] }) { await resumeOrFocus(s) } else { await open(ids, fork: false) }
+    }
+
+    func resumeOrFocus(_ s: Session) async {
+        guard s.live != nil, focusMissed != s.id else {
+            focusMissed = nil
+            await open([s.id], fork: false)
+            return
+        }
+        guard let r = await run("switch", refetch: false, { try $0.focus(s.id) }) else { return }
+        if r.focused { say("switched to its Ghostty window"); return }
+        focusMissed = s.id
+        say(r.error ?? "no Ghostty window found for it. Click again to resume it here anyway")
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            if self?.focusMissed == s.id { self?.focusMissed = nil }
         }
     }
 

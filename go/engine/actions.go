@@ -216,7 +216,18 @@ func (e *Engine) Undo() (n int, err error) {
 func OpenHere(dir string) error {
 	switch terminal() {
 	case "ghostty":
-		return exec.Command("open", "-na", "Ghostty", "--args", "--working-directory="+dir).Start()
+		// Script the running Ghostty. `open -na` would start a second, windowless instance.
+		script := fmt.Sprintf(`tell application "Ghostty"
+	set cfg to new surface configuration
+	set initial working directory of cfg to %q
+	if (count of windows) > 0 then
+		new tab in front window with configuration cfg
+	else
+		new window with configuration cfg
+	end if
+	activate
+end tell`, dir)
+		return exec.Command("osascript", "-e", script).Run()
 	case "iTerm.app":
 		return exec.Command("open", "-a", "iTerm", dir).Start()
 	}

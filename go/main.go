@@ -367,6 +367,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case focusMsg:
+		if msg.ok {
+			return m, m.flash("switched to its Ghostty window")
+		}
+		m.confirm = msg.id
+		why := "no Ghostty window found for it"
+		if msg.err != nil {
+			why = msg.err.Error()
+		}
+		li := m.live[msg.id]
+		return m, m.flash(fmt.Sprintf("already running (pid %d, %s), %s. Enter again to resume anyway", li.PID, li.Status, why))
 	case qaMsg:
 		delete(m.qBusy, msg.id)
 		it := qaItem{q: msg.q, a: msg.a}
@@ -750,8 +761,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if s := m.selected(); s != nil {
 				if li, ok := m.live[s.ID]; ok && m.confirm != s.ID {
-					m.confirm = s.ID
-					return m, m.flash(fmt.Sprintf("already running (pid %d, %s). Enter again to resume anyway", li.PID, li.Status))
+					return m, focusSession(s, li) // a running session: go to its window instead of opening a second copy
 				}
 				cmd := m.askOpen("resume", []*session{s})
 				return m, cmd
