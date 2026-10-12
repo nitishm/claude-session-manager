@@ -214,52 +214,6 @@ func briefVisual(b *engine.BriefData, w int) []string {
 	return out
 }
 
-func (m model) briefWidth() int { return min(m.w-8, 92) }
-func (m model) briefVis() int   { return max(3, m.h-10) }
-
-// briefBody is the popup's scrollable content. The key handler and the renderer both use it,
-// so the scroll position can be clamped to the real last line.
-func (m model) briefBody() []string {
-	w := m.briefWidth()
-	switch {
-	case m.briefBusy && m.brief == "":
-		return []string{sDim.Render("asking claude… (5-15s)")}
-	case m.brief == "":
-		return []string{sDim.Render("no brief yet")}
-	}
-	var warn []string
-	if s := m.selected(); s != nil {
-		if e := m.briefs[s.ID]; e.stale(s) {
-			warn = []string{sWarn.Render(e.staleNote(s)), sDim.Render("press r to regenerate"), ""}
-		}
-	}
-	if b, ok := engine.ParseBrief(m.brief); ok {
-		return append(warn, briefVisual(b, w-4)...)
-	}
-	return append(warn, briefLines(m.brief, w)...) // a brief cached before the structured format; r regenerates
-}
-
-// briefMaxScroll is the largest scroll offset that still fills the window.
-func (m model) briefMaxScroll() int { return max(0, len(m.briefBody())-m.briefVis()) }
-
-func (m model) briefPopup() string {
-	w := m.briefWidth()
-	title := "Brief"
-	if s := m.selected(); s != nil {
-		title += " · " + engine.Clean(s.Label(), w-10)
-	}
-	body := m.briefBody()
-	vis := m.briefVis()
-	sc := max(0, min(m.briefScroll, m.briefMaxScroll()))
-	end := min(len(body), sc+vis)
-	foot := "j/k scroll · g/G top/bottom · r regenerate · Esc closes"
-	if len(body) > vis {
-		foot = fmt.Sprintf("%d-%d of %d · ", sc+1, end, len(body)) + foot
-	}
-	txt := sBold.Render(title) + "\n\n" + strings.Join(body[sc:end], "\n") + "\n\n" + sDim.Render(foot)
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 2).Width(w).Render(txt)
-}
-
 // briefEntry is the brief shown in the detail pane. An entry with no text is waiting on, or failed at, generation.
 type briefEntry struct {
 	text   string
@@ -298,8 +252,10 @@ func (m model) briefSection(s *session, w int) string {
 	switch {
 	case e.text != "":
 		var out []string
-		if e.stale(s) {
-			out = append(out, sWarn.Render(e.staleNote(s)+" · S then r regenerates"))
+		if m.briefGen[s.ID] {
+			out = append(out, sDim.Render("regenerating… (5-15s)"))
+		} else if e.stale(s) {
+			out = append(out, sWarn.Render(e.staleNote(s)+" · S regenerates"))
 		}
 		if b, ok := engine.ParseBrief(e.text); ok {
 			out = append(out, briefVisual(b, w)...)
@@ -308,7 +264,7 @@ func (m model) briefSection(s *session, w int) string {
 		}
 		return strings.Join(out, "\n")
 	case e.failed:
-		return sBad.Render("brief failed · S then r retries")
+		return sBad.Render("brief failed · S retries")
 	case m.briefGen[s.ID]:
 		return sDim.Render("asking claude… (5-15s)")
 	case s.Path == "" || s.Prompts == 0:

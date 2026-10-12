@@ -123,7 +123,6 @@ func helpPopup(w, h int) string {
 		k("t / T", "tag · T = auto-tag with claude"),
 		k("#", "filter by tag (press again = next)"),
 		k("a", "ask claude in plain English"),
-		k("s", "one-line summary"),
 	}
 	right := []string{
 		sec("FILTER · VIEW"),
@@ -134,7 +133,7 @@ func helpPopup(w, h int) string {
 		k("b", "before reboot"),
 		k("F", "forks + originals"),
 		k("v", "detail pane · J/K scroll"),
-		k("S", "detailed brief (popup)"),
+		k("S", "regenerate the brief (it shows in the detail pane)"),
 		k("z", "stale: ≤2 prompts, >7d old"),
 		k("r", "reload · q quit"),
 		"",

@@ -238,12 +238,6 @@ final class Store {
         say(r.error ?? "restored \(r.restored)")
     }
 
-    func summarize(_ id: String) async {
-        busy.insert(id)
-        defer { busy.remove(id) }
-        if await run("summary", { try $0.summarize(id) }) != nil { say("summary saved") }
-    }
-
     func autoTag(_ ids: [String]) async {
         let ids = Array(ids.prefix(20))
         for id in ids { busy.insert(id) }

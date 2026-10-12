@@ -28,10 +28,6 @@ const (
 )
 
 type (
-	summaryMsg struct {
-		id, key, text string
-		err           error
-	}
 	briefMsg struct {
 		id, key, text string
 		at            time.Time // the session's mtime when the brief was made
@@ -53,13 +49,6 @@ type (
 		changed bool
 	}
 )
-
-func summarize(s *session) tea.Cmd {
-	return func() tea.Msg {
-		txt, err := eng.Summarize(s)
-		return summaryMsg{id: s.ID, key: engine.SummaryKey(s), text: txt, err: err}
-	}
-}
 
 func briefSession(s *session) tea.Cmd {
 	return func() tea.Msg {

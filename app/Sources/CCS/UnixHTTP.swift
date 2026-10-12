@@ -168,10 +168,6 @@ struct API: Sendable {
         try decode(http.request("POST", "/ai/brief", body: json(["id": AnyEncodable(id), "force": AnyEncodable(force), "cachedOnly": AnyEncodable(cachedOnly)])), BriefReply.self)
     }
 
-    func summarize(_ id: String) throws -> String {
-        try decode(http.request("POST", "/ai/summarize", body: json(["id": id])), [String: String].self)["summary"] ?? ""
-    }
-
     func ask(_ query: String) throws -> [Hit] { try decode(http.request("POST", "/ai/ask", body: json(["query": query])), [Hit].self) }
     func deep(_ query: String) throws -> [Hit] { try decode(http.request("POST", "/ai/deep", body: json(["query": query])), [Hit].self) }
 

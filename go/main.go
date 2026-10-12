@@ -38,7 +38,7 @@ func rawBadge(m model, s *session) string {
 		return "✓"
 	case eng.Pinned(s.ID):
 		return "★"
-	case m.busy[s.ID]:
+	case m.briefGen[s.ID]:
 		return "◌"
 	case m.isLive(s):
 		g, _ := liveGlyph(m.live[s.ID])
@@ -59,61 +59,56 @@ type (
 )
 
 type model struct {
-	all         []*session
-	rows        []*session
-	sortIdx     int
-	dirf        string
-	tagf        string // only sessions with this tag
-	rev         bool   // reverse the current sort (click the active header again)
-	in          textinput.Model
-	cur         int
-	top         *int
-	w, h        int
-	preview     bool
-	help        bool
-	busy        map[string]bool
-	msg         string
-	msgSeq      int
-	result      *session
-	fork        bool
-	dscroll     int
-	lastSel     string
-	boot        time.Time
-	pre         map[string]bool
-	preOnly     bool
-	marks       map[string]bool
-	live        map[string]liveInfo
-	confirm     string
-	liveOnly    bool
-	del         map[string]bool
-	delAsk      bool
-	restoreAsk  bool
-	pend        string // pending open: resume | fork | open | restore; waits for t / w / h
-	pendSS      []*session
-	tickN       int
-	forkOnly    bool
-	reloading   bool
-	askIn       textinput.Model
-	tagIn       textinput.Model
-	tagFor      string // session ID being tagged
-	tagging     bool   // an auto-tag call is running
-	briefOn     bool   // the brief popup is open
-	briefBusy   bool
-	brief       string
-	briefID     string
-	briefScroll int
-	split       int                   // list width as a percent of the screen; 0 means the default
-	dragging    bool                  // the divider is being dragged
-	briefs      map[string]briefEntry // per-session brief shown in the detail pane
-	briefGen    map[string]bool       // brief generations in flight
-	asking      bool
-	askKind     string // "" or "deep": what produced the current result list
-	deepIn      textinput.Model
-	staleOnly   bool
-	askOnly     bool
-	askQ        string
-	askWhy      map[string]string
-	askRank     map[string]int
+	all        []*session
+	rows       []*session
+	sortIdx    int
+	dirf       string
+	tagf       string // only sessions with this tag
+	rev        bool   // reverse the current sort (click the active header again)
+	in         textinput.Model
+	cur        int
+	top        *int
+	w, h       int
+	preview    bool
+	help       bool
+	busy       map[string]bool
+	msg        string
+	msgSeq     int
+	result     *session
+	fork       bool
+	dscroll    int
+	lastSel    string
+	boot       time.Time
+	pre        map[string]bool
+	preOnly    bool
+	marks      map[string]bool
+	live       map[string]liveInfo
+	confirm    string
+	liveOnly   bool
+	del        map[string]bool
+	delAsk     bool
+	restoreAsk bool
+	pend       string // pending open: resume | fork | open | restore; waits for t / w / h
+	pendSS     []*session
+	tickN      int
+	forkOnly   bool
+	reloading  bool
+	askIn      textinput.Model
+	tagIn      textinput.Model
+	tagFor     string                // session ID being tagged
+	tagging    bool                  // an auto-tag call is running
+	split      int                   // list width as a percent of the screen; 0 means the default
+	dragging   bool                  // the divider is being dragged
+	briefs     map[string]briefEntry // per-session brief shown in the detail pane
+	briefGen   map[string]bool       // brief generations in flight
+	asking     bool
+	askKind    string // "" or "deep": what produced the current result list
+	deepIn     textinput.Model
+	staleOnly  bool
+	askOnly    bool
+	askQ       string
+	askWhy     map[string]string
+	askRank    map[string]int
 }
 
 // layout returns list width, detail width, body height.
@@ -200,7 +195,7 @@ func newModel(all []*session) model {
 	boot := engine.BootTime()
 	pre := eng.PreBoot(all, boot)
 	live, _ := eng.ReadPids()
-	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, busy: map[string]bool{}, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}}
+	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}}
 	m.refilter()
 	return m
 }
@@ -355,24 +350,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case summaryMsg:
-		delete(m.busy, msg.id)
-		if msg.err != nil {
-			return m, m.flash("summary failed: " + msg.err.Error())
-		}
-		eng.StoreSummary(msg.key, msg.text)
-		var tagCmd tea.Cmd
-		for _, s := range m.all {
-			if s.ID == msg.id {
-				eng.SetSummary(s, msg.text)
-				if len(eng.Tags(s.ID)) == 0 && !m.tagging { // a freshly summarized session gets tags too
-					m.tagging = true
-					tagCmd = autoTag([]*session{s})
-				}
-			}
-		}
-		m.refilter()
-		return m, tagCmd
 	case briefWantMsg:
 		// Only generate if the cursor stayed on the session, so scrolling past sessions costs nothing.
 		s := m.selected()
@@ -392,14 +369,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.briefs[msg.id] = briefEntry{failed: true}
 		}
-		if m.briefOn && m.briefID == msg.id {
-			m.briefBusy = false
-			if msg.err != nil {
-				m.briefOn = false
-				return m, m.flash("brief failed: " + msg.err.Error())
-			}
-			m.brief = msg.text
-		} else if msg.err != nil {
+		if msg.err != nil {
 			return m, m.flash("brief failed: " + msg.err.Error())
 		}
 		return m, nil
@@ -501,31 +471,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var c tea.Cmd
 			m.askIn, c = m.askIn.Update(msg)
 			return m, c
-		}
-		if m.briefOn {
-			switch msg.String() {
-			case "esc", "q", "S", "enter":
-				m.briefOn = false
-			case "j", "down":
-				m.briefScroll = min(m.briefScroll+1, m.briefMaxScroll())
-			case "k", "up":
-				m.briefScroll = max(0, min(m.briefScroll, m.briefMaxScroll())-1)
-			case "pgdown", " ":
-				m.briefScroll = min(m.briefScroll+8, m.briefMaxScroll())
-			case "pgup":
-				m.briefScroll = max(0, min(m.briefScroll, m.briefMaxScroll())-8)
-			case "g", "home":
-				m.briefScroll = 0
-			case "G", "end":
-				m.briefScroll = m.briefMaxScroll()
-			case "r":
-				if s := m.selected(); s != nil && !m.briefBusy {
-					m.brief, m.briefBusy, m.briefScroll = "", true, 0
-					m.briefGen[s.ID] = true
-					return m, briefSession(s)
-				}
-			}
-			return m, nil
 		}
 		if m.help { // the popup swallows the key that closes it
 			m.help = false
@@ -680,17 +625,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if s == nil || s.Path == "" || s.Prompts == 0 {
 				return m, m.flash("no transcript yet: ask something in that session first")
 			}
-			m.briefOn, m.briefID, m.briefScroll = true, s.ID, 0
-			if e := m.briefs[s.ID]; e.text != "" { // a stale brief still shows; r regenerates
-				m.brief, m.briefBusy = e.text, false
-				return m, nil
-			}
-			m.brief, m.briefBusy = "", true
-			if m.briefGen[s.ID] { // the auto-generation already running will fill the popup
-				return m, nil
+			if m.briefGen[s.ID] {
+				return m, m.flash("already generating this brief")
 			}
 			m.briefGen[s.ID] = true
-			return m, briefSession(s)
+			return m, tea.Batch(briefSession(s), m.flash("regenerating the brief…"))
 		case "D":
 			m.deepIn.Focus()
 			return m, textinput.Blink
@@ -961,11 +900,6 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncStubs()
 			m.refilter()
 			return m, m.flash(fmt.Sprintf("reloaded %d sessions", len(m.all)))
-		case "s":
-			if s := m.selected(); s != nil && !m.busy[s.ID] {
-				m.busy[s.ID] = true
-				return m, tea.Batch(summarize(s), m.flash("summarizing…"))
-			}
 		}
 	}
 	return m, nil
@@ -1015,7 +949,7 @@ func (m model) View() string {
 			badge = sGood.Render("✓")
 		case eng.Pinned(s.ID):
 			badge = sWarn.Render("★")
-		case m.busy[s.ID]:
+		case m.briefGen[s.ID]:
 			badge = sAcc.Render("◌")
 		case m.isLive(s):
 			g, st := liveGlyph(m.live[s.ID])
@@ -1139,7 +1073,7 @@ func (m model) View() string {
 		bar = " " + sAcc.Render(verb+" in:  ") + sWarn.Render(opts)
 	}
 	k := func(key, desc string) string { return sAcc.Render(key) + sDim.Render(" "+desc) }
-	help := " " + strings.Join([]string{k("enter", "resume"), k("/", "search"), k("a", "ask claude"), k("s", "summarize"), k("p", "pin"),
+	help := " " + strings.Join([]string{k("enter", "resume"), k("/", "search"), k("a", "ask claude"), k("p", "pin"),
 		k("o", "sort"), k("d", "dir"), k("l", "live"), k("F", "forks"), k("space", "mark"), k("A", "mark all"), k("X", "delete marked"), k("b", "pre-reboot"), k("R", "restore"), k("O", "open marked"), k("?", "keys + legend"), k("q", "quit")}, "  ")
 	box := m.in.View()
 	if m.deepIn.Focused() {
@@ -1158,9 +1092,6 @@ func (m model) View() string {
 	out := strings.Join([]string{head, box, body, bar, truncLines(help, m.w)}, "\n")
 	if m.help {
 		out = overlay(out, helpPopup(m.w, m.h), m.w, m.h)
-	}
-	if m.briefOn {
-		out = overlay(out, m.briefPopup(), m.w, m.h)
 	}
 	return out
 }

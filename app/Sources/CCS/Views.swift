@@ -160,8 +160,6 @@ struct DetailView: View {
                 .disabled(session.dirGone || session.stub).clickable("act:fork", enabled: !(session.dirGone || session.stub))
             Button { Task { await store.loadBrief(session.id, force: true) } } label: { Label(brief != nil ? "Regenerate" : "Brief", systemImage: brief != nil ? "arrow.clockwise" : "doc.text.magnifyingglass") }
                 .disabled(session.stub || store.briefBusy).clickable("act:brief", enabled: !(session.stub || store.briefBusy))
-            Button { Task { await store.summarize(session.id) } } label: { Label("Summarize", systemImage: "text.badge.star") }
-                .disabled(session.stub || store.busy.contains(session.id)).clickable("act:sum", enabled: !(session.stub || store.busy.contains(session.id)))
             Spacer()
         }
     }
