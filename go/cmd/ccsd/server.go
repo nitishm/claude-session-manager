@@ -149,6 +149,9 @@ func (s *Server) view(x *engine.Session) SessionView {
 	if v.Tags == nil {
 		v.Tags = []string{}
 	}
+	if v.Turns == nil { // a fork or stub has none yet; clients expect an array, not null
+		v.Turns = []engine.Turn{}
+	}
 	if li, ok := s.live[x.ID]; ok {
 		v.Live = &li
 	}

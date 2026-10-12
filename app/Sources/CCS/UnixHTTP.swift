@@ -128,6 +128,9 @@ struct API: Sendable {
             let msg = (try? JSONDecoder().decode([String: String].self, from: r.body))?["error"] ?? "HTTP \(r.status)"
             throw CCSError.status(r.status, msg)
         }
+        // Go encodes an empty nil slice as null; a list endpoint with no results means [].
+        if T.self is any RangeReplaceableCollection.Type, String(decoding: r.body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "null",
+           let empty = try? JSONDecoder().decode(T.self, from: Data("[]".utf8)) { return empty }
         do { return try JSONDecoder.ccsd.decode(T.self, from: r.body) } catch { throw CCSError.decode("\(error)") }
     }
 

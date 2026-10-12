@@ -18,6 +18,21 @@ struct Live: Codable, Hashable {
     let kind: String
 }
 
+/// Go encodes a nil slice as null. Treat null or a missing key as an empty array.
+@propertyWrapper
+struct NullAsEmpty<T: Codable & Hashable>: Codable, Hashable {
+    var wrappedValue: [T]
+    init(wrappedValue: [T]) { self.wrappedValue = wrappedValue }
+    init(from d: Decoder) throws { wrappedValue = (try? [T](from: d)) ?? [] }
+    func encode(to e: Encoder) throws { try wrappedValue.encode(to: e) }
+}
+
+extension KeyedDecodingContainer {
+    func decode<T>(_ t: NullAsEmpty<T>.Type, forKey k: Key) throws -> NullAsEmpty<T> {
+        try decodeIfPresent(t, forKey: k) ?? NullAsEmpty(wrappedValue: [])
+    }
+}
+
 struct Session: Codable, Identifiable, Hashable {
     let id: String
     let path: String
@@ -34,8 +49,8 @@ struct Session: Codable, Identifiable, Hashable {
     let prompts: Int
     let mtime: Date
     let started: Date
-    let turns: [Turn]
-    let tags: [String]
+    @NullAsEmpty var turns: [Turn]
+    @NullAsEmpty var tags: [String]
     let pinned: Bool
     let live: Live?
     let preBoot: Bool
