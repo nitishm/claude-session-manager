@@ -129,6 +129,7 @@ final class Store {
     var briefStale = false
     var briefAt = Date.distantPast
     private(set) var facts: [String: Facts] = [:]
+    private(set) var timelines: [String: Timeline] = [:]
     private(set) var repos: [String: RepoState] = [:]
     private var repoAt: [String: Date] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
@@ -289,6 +290,10 @@ final class Store {
         if let t = repoAt[id], Date().timeIntervalSince(t) < 60, repos[id] != nil { return }
         repoAt[id] = Date()
         if let r = await run("repo", refetch: false, { try $0.repo(id) }) { repos[id] = r } else { repoAt[id] = nil }
+    }
+
+    func loadTimeline(_ id: String) async {
+        if let t = await run("history", refetch: false, { try $0.timeline(id) }) { timelines[id] = t }
     }
 
     func loadResume(_ id: String) async {

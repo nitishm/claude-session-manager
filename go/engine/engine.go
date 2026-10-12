@@ -27,8 +27,9 @@ type Engine struct {
 	repos   map[string]repoEntry
 	dirs    map[string]dirStat
 
-	factsMu sync.Mutex
-	facts   map[string]*Facts // transcript facts by session id and mtime
+	factsMu   sync.Mutex
+	facts     map[string]*Facts // transcript facts by session id and mtime
+	timelines map[string]*Timeline
 
 	repoStates map[string]repoStateEntry // slow jj/git/gh results, guarded by mu
 

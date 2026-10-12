@@ -388,3 +388,17 @@ func TestRepoEndpoint(t *testing.T) {
 		t.Errorf("unknown session = %d", c)
 	}
 }
+
+func TestTimelineEndpoint(t *testing.T) {
+	ts, _, _ := setup(t)
+	var tl engine.Timeline
+	if c := call(t, ts, "GET", "/sessions/aaa/timeline", nil, &tl); c != 200 {
+		t.Fatalf("status %d", c)
+	}
+	if tl.Events == nil {
+		t.Error("events must encode as [], not null")
+	}
+	if c := call(t, ts, "GET", "/sessions/nope/timeline", nil, &tl); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+}

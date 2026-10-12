@@ -184,6 +184,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /sessions/{id}", s.getSession)
 	m.HandleFunc("GET /sessions/{id}/facts", s.getFacts)
 	m.HandleFunc("GET /sessions/{id}/repo", s.getRepo)
+	m.HandleFunc("GET /sessions/{id}/timeline", s.getTimeline)
 	m.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -291,6 +292,18 @@ func (s *Server) getFacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, 200, s.eng.Facts(x))
+}
+
+// getTimeline returns the full event history of a session, read from its transcript. No model call.
+func (s *Server) getTimeline(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	s.mu.Unlock()
+	if x == nil || x.Path == "" {
+		fail(w, 404, "no such session")
+		return
+	}
+	reply(w, 200, s.eng.Timeline(x))
 }
 
 // getRepo returns branch, dirty count and PR state. It shells out to jj, git and gh, so clients call it apart from the session fetch.

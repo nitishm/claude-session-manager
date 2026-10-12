@@ -101,6 +101,7 @@ type model struct {
 	dragging   bool                  // the divider is being dragged
 	briefs     map[string]briefEntry // per-session brief shown in the detail pane
 	briefGen   map[string]bool       // brief generations in flight
+	histAll    bool                  // HISTORY shows every event instead of the latest few
 	repoSt     map[string]repoView   // branch, dirty count and PR state by session id
 	asking     bool
 	askKind    string // "" or "deep": what produced the current result list
@@ -737,6 +738,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.flash("opened PR in your browser")
 			}
+		case "h":
+			m.histAll = !m.histAll
+			return m, nil
 		case "e":
 			if s := m.selected(); s != nil {
 				return m, m.runAction(s, "editor")
@@ -1195,6 +1199,9 @@ func (m model) detailLines(w int) []string {
 	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
 	if fs := factsSection(s, w-1); fs != "" {
 		b.WriteString(fs + "\n")
+	}
+	if hs := m.historySection(s, w-1); hs != "" {
+		b.WriteString(hs + "\n")
 	}
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 

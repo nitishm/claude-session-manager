@@ -218,3 +218,21 @@ struct RepoState: Codable, Hashable {
     let pr: PRState?
     let err: String?
 }
+
+/// One thing that happened in a session, from `GET /sessions/{id}/timeline`.
+struct TLEvent: Codable, Hashable, Identifiable {
+    let at: Date
+    let kind: String
+    let text: String
+    let detail: String?
+    let n: Int?
+    let secs: Int?
+    let tools: Int?
+    let edits: Int?
+    let errors: Int?
+    var id: String { "\(at.timeIntervalSince1970)|\(kind)|\(text)" }
+}
+
+struct Timeline: Codable, Hashable {
+    @NullAsEmpty var events: [TLEvent]
+}
