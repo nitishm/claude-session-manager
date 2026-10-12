@@ -726,6 +726,14 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.flash("opened PR in your browser")
 			}
+		case "e":
+			if s := m.selected(); s != nil {
+				return m, m.runAction(s, "editor")
+			}
+		case "n":
+			if s := m.selected(); s != nil {
+				return m, m.runAction(s, "terminal")
+			}
 		case "o":
 			m.rev = false
 			m.sortIdx = (m.sortIdx + 1) % len(sorts)
@@ -1142,6 +1150,7 @@ func (m model) detailLines(w int) []string {
 	if eng.DirGone(s) {
 		b.WriteString(sBad.Render("✗ directory is gone, cannot resume") + "\n")
 	}
+	b.WriteString(actionRow(s) + "\n")
 	if tg := eng.TagText(s.ID, " "); tg != "" {
 		b.WriteString(sAcc.Render(tg) + sDim.Render("  · t edits") + "\n")
 	}

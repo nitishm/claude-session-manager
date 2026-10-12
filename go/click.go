@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 
+	"ccsgo/engine"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -60,6 +62,9 @@ func (m model) clickDetail(col, row, w int) tea.Cmd {
 	if len(tok) < 2 {
 		return nil
 	}
+	if a, ok := actionTokens[tok]; ok {
+		return m.runAction(s, a)
+	}
 	if strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://") {
 		if s.PR != "" && strings.Contains(s.PR, tok) {
 			tok = s.PR // a long URL may be cut by wrapping; the PR link is the one we know in full
@@ -112,4 +117,63 @@ func openInEditor(path string) error {
 		}
 	}
 	return exec.Command("open", path).Start()
+}
+
+// The action row is a line of one-word tokens, so tokenAt finds them like any other word.
+var actionTokens = map[string]string{"↗editor": "editor", "▸terminal": "terminal", "⧉resume-cmd": "copy", "↗PR": "pr"}
+
+func actionRow(s *session) string {
+	parts := []string{sLink.Render("↗editor"), sLink.Render("▸terminal"), sLink.Render("⧉resume-cmd")}
+	if s.PR != "" {
+		parts = append(parts, sLink.Render("↗PR"))
+	}
+	return strings.Join(parts, sDim.Render("  ·  ")) + sDim.Render("   keys e n y w")
+}
+
+// runAction runs one action-row entry for s.
+func (m model) runAction(s *session, a string) tea.Cmd {
+	switch a {
+	case "editor":
+		if eng.DirGone(s) {
+			return m.flash("directory is gone")
+		}
+		app := "/Applications/Zed.app"
+		if _, err := os.Stat(app); err != nil {
+			app = ""
+		}
+		var err error
+		if app != "" {
+			err = exec.Command("open", "-a", app, s.Cwd).Start()
+		} else {
+			err = exec.Command("open", s.Cwd).Start()
+		}
+		if err != nil {
+			return m.flash("open failed: " + err.Error())
+		}
+		return m.flash("opened " + eng.Short(s.Cwd))
+	case "terminal":
+		if eng.DirGone(s) {
+			return m.flash("directory is gone")
+		}
+		if err := engine.OpenHere(s.Cwd); err != nil {
+			return m.flash("open failed: " + err.Error())
+		}
+		return m.flash("terminal opened in " + eng.Short(s.Cwd))
+	case "copy":
+		c := exec.Command("pbcopy")
+		c.Stdin = strings.NewReader("cd " + eng.Short(s.Cwd) + " && claude --resume " + s.ID)
+		if c.Run() != nil {
+			return m.flash("copy failed")
+		}
+		return m.flash("copied resume command")
+	case "pr":
+		if !strings.HasPrefix(s.PR, "http") {
+			return m.flash("no PR link on this session")
+		}
+		if err := exec.Command("open", s.PR).Start(); err != nil {
+			return m.flash("open failed: " + err.Error())
+		}
+		return m.flash("opened PR in your browser")
+	}
+	return nil
 }

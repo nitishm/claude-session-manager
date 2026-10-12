@@ -211,3 +211,14 @@ func (e *Engine) Undo() (n int, err error) {
 	os.Remove(e.file("undo.json"))
 	return n, err
 }
+
+// OpenHere opens a plain terminal window in dir, with no claude running.
+func OpenHere(dir string) error {
+	switch terminal() {
+	case "ghostty":
+		return exec.Command("open", "-na", "Ghostty", "--args", "--working-directory="+dir).Start()
+	case "iTerm.app":
+		return exec.Command("open", "-a", "iTerm", dir).Start()
+	}
+	return exec.Command("open", "-a", "Terminal", dir).Start()
+}

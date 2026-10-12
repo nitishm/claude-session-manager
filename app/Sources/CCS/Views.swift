@@ -163,7 +163,20 @@ struct DetailView: View {
             Button { Task { await store.loadBrief(session.id, force: true) } } label: { Label(brief != nil ? "Regenerate" : "Brief", systemImage: brief != nil ? "arrow.clockwise" : "doc.text.magnifyingglass") }
                 .disabled(session.stub || store.briefBusy).clickable("act:brief", enabled: !(session.stub || store.briefBusy))
             Spacer()
+            HStack(spacing: 4) {
+                iconButton("chevron.left.forwardslash.chevron.right", "Open folder in Zed", "act:zed", off: session.dirGone) { store.openFolderInEditor(session.cwd) }
+                iconButton("terminal", "New terminal in this folder", "act:term", off: session.dirGone) { store.openTerminalHere(session.cwd) }
+                iconButton("doc.on.doc", "Copy resume command", "act:copy") { store.copy("cd \(session.cwd) && claude --resume \(session.id)", note: "copied resume command") }
+                if let u = URL(string: session.pr), !session.pr.isEmpty {
+                    iconButton("arrow.up.right.square", "Open PR in browser", "act:pr") { NSWorkspace.shared.open(u) }
+                }
+            }
         }
+    }
+
+    private func iconButton(_ symbol: String, _ tip: String, _ key: String, off: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(width: 18, height: 18) }
+            .disabled(off).help(tip).clickable(key, enabled: !off)
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {

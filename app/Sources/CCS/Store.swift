@@ -87,6 +87,38 @@ final class Store {
         }
     }
 
+    /// Opens the session folder in Zed, or the default app when Zed is not installed.
+    func openFolderInEditor(_ dir: String) {
+        let u = URL(fileURLWithPath: dir)
+        let zed = URL(fileURLWithPath: "/Applications/Zed.app")
+        if FileManager.default.fileExists(atPath: zed.path) {
+            NSWorkspace.shared.open([u], withApplicationAt: zed, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(u)
+        }
+    }
+
+    /// Opens a plain terminal window in dir, with no claude running.
+    func openTerminalHere(_ dir: String) {
+        let u = URL(fileURLWithPath: dir)
+        for app in ["Ghostty", "iTerm", "Utilities/Terminal"] {
+            let a = URL(fileURLWithPath: "/Applications/\(app).app")
+            let sys = URL(fileURLWithPath: "/System/Applications/\(app).app")
+            for cand in [a, sys] where FileManager.default.fileExists(atPath: cand.path) {
+                if app == "Ghostty" {
+                    let p = Process()
+                    p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                    p.arguments = ["-na", "Ghostty", "--args", "--working-directory=" + dir]
+                    try? p.run()
+                } else {
+                    NSWorkspace.shared.open([u], withApplicationAt: cand, configuration: NSWorkspace.OpenConfiguration())
+                }
+                return
+            }
+        }
+        say("no terminal app found")
+    }
+
     func reveal(_ u: URL) { NSWorkspace.shared.activateFileViewerSelecting([u]) }
 
     // Brief popup state for the selected session.
