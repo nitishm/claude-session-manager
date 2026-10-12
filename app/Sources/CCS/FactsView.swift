@@ -40,7 +40,7 @@ struct FactsView: View {
     }
 
     private var files: some View {
-        let shown = showAll ? facts.files : Array(facts.files.prefix(6))
+        let shown = showAll ? facts.files : Array(facts.files.prefix(4))
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Files touched").font(.subheadline.weight(.semibold))
@@ -71,7 +71,7 @@ struct FactsView: View {
                     Button("Copy path") { store.copy(f.path) }
                 }
             }
-            if facts.files.count > 6 {
+            if facts.files.count > 4 {
                 Button(showAll ? "Show fewer" : "Show all \(facts.files.count)") { store.toggle("files:all") }
                     .buttonStyle(.link).font(.caption).clickable()
             }
@@ -79,25 +79,35 @@ struct FactsView: View {
     }
 
     private var commands: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Commands").font(.subheadline.weight(.semibold))
-                Text("last \(facts.commands.count) of \(facts.commandCount) · click to copy").font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(Array(facts.commands.enumerated()), id: \.offset) { i, c in
-                let key = "cmd:\(i)"
-                Button { store.copy(c, note: "copied command") } label: {
-                    HStack(spacing: 6) {
-                        Text("$").foregroundStyle(.secondary)
-                        Text(c).lineLimit(1).truncationMode(.tail)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.system(.caption, design: .monospaced))
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(store.hover == key ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .contentShape(Rectangle())
+        let open = store.collapsed.contains("cmds:open")
+        return VStack(alignment: .leading, spacing: 4) {
+            Button { store.toggle("cmds:open") } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right").font(.caption2.bold()).rotationEffect(.degrees(open ? 90 : 0)).frame(width: 10)
+                    Text("Commands").font(.subheadline.weight(.semibold))
+                    Text("last \(facts.commands.count) of \(facts.commandCount)").font(.caption).foregroundStyle(.secondary)
+                    if open { Text("click one to copy").font(.caption).foregroundStyle(.secondary) }
+                    Spacer()
                 }
-                .buttonStyle(.plain).onHover { store.setHover(key, $0) }.clickable()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).clickable("cmds:head")
+            if open {
+                ForEach(Array(facts.commands.enumerated()), id: \.offset) { i, c in
+                    let key = "cmd:\(i)"
+                    Button { store.copy(c, note: "copied command") } label: {
+                        HStack(spacing: 6) {
+                            Text("$").foregroundStyle(.secondary)
+                            Text(c).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(store.hover == key ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).onHover { store.setHover(key, $0) }.clickable()
+                }
             }
         }
     }

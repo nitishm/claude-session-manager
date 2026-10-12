@@ -7,6 +7,7 @@ struct BriefView: View {
     @Bindable var store: Store
     let session: Session
     let data: BriefData
+    var facts: Facts?
 
     private var canResume: Bool { !session.dirGone && !session.stub }
     private var status: (symbol: String, color: Color) { Theme.status(data.status) }
@@ -20,9 +21,10 @@ struct BriefView: View {
         VStack(alignment: .leading, spacing: 16) {
             hero
             tiles
+            if let facts { FactsView(store: store, session: session, facts: facts) }
             if !data.timeline.isEmpty { fold("timeline", "Timeline", "\(data.timeline.count) milestones") { timeline } }
             if !data.steps.isEmpty { fold("steps", "Steps", "\(data.progress.done)/\(data.steps.count) done") { kanban } }
-            if !data.files.isEmpty { fold("files", "Files", "\(data.files.count)") { files } }
+            if !data.files.isEmpty, facts?.files.isEmpty ?? true { fold("files", "Files", "\(data.files.count)") { files } }
         }
     }
 

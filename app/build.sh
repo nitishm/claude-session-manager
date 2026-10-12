@@ -34,7 +34,11 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </dict></plist>
 EOF
 
-codesign --force --deep -s - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc codesign failed"
+# A stable identity (see make-signing-cert.sh) keeps macOS permission grants across rebuilds; ad-hoc does not.
+ID=-
+security find-identity -p codesigning 2>/dev/null | grep -q "CCS Local Signing" && ID="CCS Local Signing"
+codesign --force --deep -s "$ID" "$APP" >/dev/null 2>&1 || echo "warning: codesign with '$ID' failed"
+[ "$ID" = - ] && echo "note: ad-hoc signed, so macOS will re-ask for folder access after each rebuild (run make-signing-cert.sh once)"
 echo "built $APP"
 [ "${1:-}" = run ] && open "$APP"
 exit 0

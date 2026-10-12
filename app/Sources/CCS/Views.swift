@@ -81,10 +81,10 @@ struct DetailView: View {
                 actions
                 if brief != nil, store.briefStale { staleBanner }
                 if let t = brief {
-                    if let d = store.briefData { BriefView(store: store, session: session, data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
+                    if let d = store.briefData { BriefView(store: store, session: session, data: d, facts: store.facts[session.id]) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
-                if let f = store.facts[session.id] { FactsView(store: store, session: session, facts: f) }
+                if let f = store.facts[session.id], !(brief != nil && store.briefData != nil) { FactsView(store: store, session: session, facts: f) }
                 if brief == nil, !store.briefBusy {
                     Text("No brief for this session.").font(.callout).foregroundStyle(.secondary)
                 }
