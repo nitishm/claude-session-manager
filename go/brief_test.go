@@ -105,3 +105,18 @@ func TestHyperlinkKeepsWidth(t *testing.T) {
 		t.Fatal("link target missing")
 	}
 }
+
+func TestSplitResizeClamps(t *testing.T) {
+	m := model{w: 120, h: 40, preview: true}
+	lw, dw, _ := m.layout()
+	if lw != 120*58/100 || lw+dw != 120 {
+		t.Fatalf("default split lw=%d dw=%d", lw, dw)
+	}
+	for _, pct := range []int{1, 20, 85, 99} {
+		m.split = pct
+		lw, dw, _ = m.layout()
+		if lw < 40 || dw < 34 || lw+dw != 120 {
+			t.Errorf("split %d%% gave lw=%d dw=%d", pct, lw, dw)
+		}
+	}
+}
