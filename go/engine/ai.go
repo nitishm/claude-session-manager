@@ -432,49 +432,13 @@ func (e *Engine) AskSession(s *Session, question string) (string, error) {
 			b.WriteString("Last shell commands:\n- " + strings.Join(f.Commands, "\n- ") + "\n")
 		}
 	}
-	b.WriteString("\n" + askDigest(readExchanges(s.Path)))
-	out, err := runClaude(askSessionPrompt+b.String()+"\nQuestion: "+Clean(question, 600)+"\n", 90*time.Second)
+	b.WriteString("\n" + convoDigest(readConversation(s.Path), question, askBudget))
+	out, err := runClaude(askSessionPrompt+b.String()+"\nQuestion: "+Clean(question, 600)+"\n", 150*time.Second)
 	ans := strings.TrimSpace(ctrlRe.ReplaceAllString(out, ""))
 	if err == nil && ans == "" {
 		err = fmt.Errorf("empty reply")
 	}
 	return ans, err
-}
-
-// askDigest is digest with a wider window: a question may be about the middle of a long session.
-func askDigest(ex []Exchange) string {
-	const budget = 18000
-	var lines []string
-	for _, x := range ex {
-		l := fmt.Sprintf("#%d [%s] user: %s", x.N, x.When, Clean(x.User, 300))
-		if x.Reply != "" {
-			l += "\n    claude: " + Clean(x.Reply, 300)
-		}
-		lines = append(lines, l)
-	}
-	total := 0
-	for _, l := range lines {
-		total += len(l) + 1
-	}
-	if total > budget { // drop from the middle: the start sets the goal and the end holds the outcome
-		keepHead, keepTail := 8, 0
-		for i := len(lines) - 1; i >= keepHead; i-- {
-			if keepHead2 := sumLen(lines[:keepHead]) + sumLen(lines[i:]); keepHead2 > budget {
-				break
-			}
-			keepTail = len(lines) - i
-		}
-		lines = append(append(append([]string{}, lines[:keepHead]...), fmt.Sprintf("[… %d exchanges omitted …]", len(lines)-keepHead-keepTail)), lines[len(lines)-keepTail:]...)
-	}
-	return fmt.Sprintf("Conversation (%d exchanges, oldest first):\n%s\n", len(ex), strings.Join(lines, "\n"))
-}
-
-func sumLen(ls []string) int {
-	n := 0
-	for _, l := range ls {
-		n += len(l) + 1
-	}
-	return n
 }
 
 // ───────────────────────── deep search ─────────────────────────
