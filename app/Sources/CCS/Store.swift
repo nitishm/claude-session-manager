@@ -304,9 +304,14 @@ final class Store {
             return
         }
         guard let r = await run("switch", refetch: false, { try $0.focus(s.id) }) else { return }
-        if r.focused { say("switched to its Ghostty window"); return }
+        if r.focused {
+            let host = r.host ?? "its window"
+            say(r.exact == true ? "switched to its \(host) window" : "raised \(host) (it cannot pick the terminal tab)")
+            return
+        }
         focusMissed = s.id
-        say(r.error ?? "no Ghostty window found for it. Click again to resume it here anyway")
+        let where_ = (r.host?.isEmpty == false) ? "no \(r.host!) window found for it" : "could not find the window it runs in"
+        say((r.error ?? where_) + ". Click again to resume it here anyway")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
             if self?.focusMissed == s.id { self?.focusMissed = nil }

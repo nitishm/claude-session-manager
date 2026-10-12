@@ -37,7 +37,7 @@ type (
 	repoWantMsg  struct{ id string }
 	focusMsg     struct {
 		id  string
-		ok  bool
+		res engine.FocusResult
 		err error
 	}
 	repoMsg struct {
@@ -138,7 +138,7 @@ var sorts = engine.Sorts
 func focusSession(s *session, li engine.LiveInfo) tea.Cmd {
 	cp := *s
 	return func() tea.Msg {
-		ok, err := eng.FocusSession(&cp, li)
-		return focusMsg{id: cp.ID, ok: ok, err: err}
+		res, err := eng.FocusSession(&cp, li)
+		return focusMsg{id: cp.ID, res: res, err: err}
 	}
 }

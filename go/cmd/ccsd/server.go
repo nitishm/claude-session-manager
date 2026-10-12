@@ -438,8 +438,8 @@ func (s *Server) focus(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"focused": false, "running": false})
 		return
 	}
-	ok, err := s.eng.FocusSession(x, li)
-	out := map[string]any{"focused": ok, "running": true}
+	res, err := s.eng.FocusSession(x, li)
+	out := map[string]any{"focused": res.Focused, "running": true, "host": res.Host, "exact": res.Exact}
 	if err != nil {
 		out["error"] = err.Error()
 	}

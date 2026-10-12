@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -60,22 +62,82 @@ func findTerminal(s *Session, li LiveInfo) (string, error) {
 	return matchTerminal(strings.Split(string(out), "\n"), s.Label(), li.Name), nil
 }
 
-// FocusSession brings the Ghostty window that holds a live session to the front. It reports false, with no
-// error, when Ghostty is not the terminal or no window carries that session's title.
-func (e *Engine) FocusSession(s *Session, li LiveInfo) (bool, error) {
-	if terminal() != "ghostty" {
-		return false, nil
+// FocusResult says what FocusSession did.
+type FocusResult struct {
+	Focused bool   `json:"focused"`
+	Host    string `json:"host,omitempty"`  // the app the session runs in, such as Ghostty or Zed
+	Exact   bool   `json:"exact,omitempty"` // true when the session's own terminal was selected, false when only its app or window was raised
+}
+
+var appRe = regexp.MustCompile(`^(.*?/([^/]+)\.app)(/|$)`)
+
+// bundleOf returns the outermost app bundle in a process command line: "/Applications/Zed.app" and "Zed".
+func bundleOf(cmd string) (path, name string) {
+	cmd = strings.TrimLeft(strings.TrimSpace(cmd), "-")
+	if m := appRe.FindStringSubmatch(cmd); m != nil {
+		return m[1], m[2]
 	}
-	id, err := findTerminal(s, li)
-	if err != nil || id == "" {
-		return false, err
+	return "", ""
+}
+
+// editorApps are hosts that can open a folder, which raises the window that already has it open.
+var editorApps = map[string]bool{"Zed": true, "Zed Preview": true, "Visual Studio Code": true, "Visual Studio Code - Insiders": true, "Cursor": true, "Windsurf": true, "VSCodium": true}
+
+// hostOf walks up from pid and returns the first app bundle that holds the process, for example the
+// Zed or Ghostty that owns the terminal a session runs in. It is empty under tmux, ssh and the like.
+func hostOf(pid int) (path, name string) {
+	for i := 0; i < 16 && pid > 1; i++ {
+		out, err := exec.Command("ps", "-o", "ppid=,command=", "-p", strconv.Itoa(pid)).Output()
+		line := strings.TrimSpace(string(out))
+		if err != nil || line == "" {
+			return "", ""
+		}
+		ppid, cmd, _ := strings.Cut(line, " ")
+		if p, n := bundleOf(cmd); p != "" {
+			return p, n
+		}
+		next, err := strconv.Atoi(strings.TrimSpace(ppid))
+		if err != nil {
+			return "", ""
+		}
+		pid = next
 	}
-	focus := fmt.Sprintf(`tell application "Ghostty"
+	return "", ""
+}
+
+// FocusSession switches to where a running session lives. Ghostty: its own terminal, found by title.
+// Zed, VS Code and the like: the window that has the session's folder open. Any other terminal app is raised.
+// It reports Focused false, with no error, when the host cannot be found or is not an app.
+func (e *Engine) FocusSession(s *Session, li LiveInfo) (FocusResult, error) {
+	path, name := hostOf(li.PID)
+	switch {
+	case name == "Ghostty" || (name == "" && terminal() == "ghostty"):
+		id, err := findTerminal(s, li)
+		if err != nil || id == "" {
+			return FocusResult{Host: "Ghostty"}, err
+		}
+		focus := fmt.Sprintf(`tell application "Ghostty"
 	focus (first terminal whose id is %q)
 	activate
 end tell`, id)
-	if b, err := exec.Command("osascript", "-e", focus).CombinedOutput(); err != nil {
-		return false, fmt.Errorf("ghostty: %s", strings.TrimSpace(string(b)))
+		if b, err := exec.Command("osascript", "-e", focus).CombinedOutput(); err != nil {
+			return FocusResult{Host: "Ghostty"}, fmt.Errorf("ghostty: %s", strings.TrimSpace(string(b)))
+		}
+		return FocusResult{Focused: true, Host: "Ghostty", Exact: true}, nil
+	case editorApps[name]:
+		dir := li.Cwd
+		if dir == "" {
+			dir = s.Cwd
+		}
+		if err := exec.Command("open", "-a", path, dir).Run(); err != nil {
+			return FocusResult{Host: name}, fmt.Errorf("%s: %v", name, err)
+		}
+		return FocusResult{Focused: true, Host: name}, nil
+	case name != "":
+		if err := exec.Command("open", "-a", path).Run(); err != nil {
+			return FocusResult{Host: name}, fmt.Errorf("%s: %v", name, err)
+		}
+		return FocusResult{Focused: true, Host: name}, nil
 	}
-	return true, nil
+	return FocusResult{}, nil
 }

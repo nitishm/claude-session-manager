@@ -368,11 +368,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case focusMsg:
-		if msg.ok {
-			return m, m.flash("switched to its Ghostty window")
+		if msg.res.Focused {
+			if msg.res.Exact {
+				return m, m.flash("switched to its " + msg.res.Host + " window")
+			}
+			return m, m.flash("raised " + msg.res.Host + " (it cannot pick the terminal tab)")
 		}
 		m.confirm = msg.id
-		why := "no Ghostty window found for it"
+		why := "could not find the window it runs in"
+		if msg.res.Host != "" {
+			why = "no " + msg.res.Host + " window found for it"
+		}
 		if msg.err != nil {
 			why = msg.err.Error()
 		}
