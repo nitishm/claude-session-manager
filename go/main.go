@@ -102,6 +102,8 @@ type model struct {
 	brief       string
 	briefID     string
 	briefScroll int
+	split       int                   // list width as a percent of the screen; 0 means the default
+	dragging    bool                  // the divider is being dragged
 	briefs      map[string]briefEntry // per-session brief shown in the detail pane
 	briefGen    map[string]bool       // brief generations in flight
 	asking      bool
@@ -119,7 +121,11 @@ func (m model) layout() (lw, dw, bodyH int) {
 	bodyH = max(3, m.h-5)
 	lw = m.w
 	if m.preview && m.w >= 90 {
-		lw = m.w * 58 / 100
+		pct := m.split
+		if pct == 0 {
+			pct = 58
+		}
+		lw = min(max(m.w*pct/100, 40), m.w-34) // keep both panes usable
 		dw = m.w - lw
 	}
 	return
@@ -146,6 +152,13 @@ var (
 	sBad    = lipgloss.NewStyle().Foreground(cBad).Bold(true)
 	sHead   = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 )
+
+func divColor(drag bool) lipgloss.AdaptiveColor {
+	if drag {
+		return cAccent
+	}
+	return cDim
+}
 
 // hyperlink wraps text in an OSC 8 link, so terminals that support it (Ghostty, iTerm2) open it on Cmd-click.
 // Others ignore the escape and show the text unchanged.
@@ -229,6 +242,12 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		lw, dw, _ := m.layout()
 		switch {
+		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
+			m.dragging = true // grab the divider
+		case m.dragging && msg.Action == tea.MouseActionMotion:
+			m.split = min(max(msg.X*100/max(m.w, 1), 20), 85)
+		case m.dragging && msg.Action == tea.MouseActionRelease:
+			m.dragging = false
 		case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
 			dir := 1
 			if msg.Button == tea.MouseButtonWheelUp {
@@ -642,6 +661,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.forkOnly = !m.forkOnly
 			m.cur, *m.top = 0, 0
 			m.refilter()
+		case "<", ">":
+			cur := m.split
+			if cur == 0 {
+				cur = 58
+			}
+			if msg.String() == "<" {
+				cur -= 5
+			} else {
+				cur += 5
+			}
+			m.split = min(max(cur, 20), 85)
 		case "a":
 			m.askIn.Focus()
 			return m, textinput.Blink
@@ -1036,7 +1066,7 @@ func (m model) View() string {
 	body := list
 	if dw > 0 {
 		det := lipgloss.NewStyle().Width(dw-3).Height(bodyH).MaxHeight(bodyH).PaddingLeft(1).
-			Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(cDim).
+			Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(divColor(m.dragging)).
 			Render(m.detail(dw-4, bodyH))
 		body = lipgloss.JoinHorizontal(lipgloss.Top, list, det)
 	}
