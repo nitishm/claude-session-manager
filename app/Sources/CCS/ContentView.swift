@@ -40,7 +40,7 @@ struct ContentView: View {
             if case .down(let why) = store.conn { downBanner(why) }
             List(selection: $store.selection) {
                 ForEach(store.rows) { s in
-                    SessionRow(session: s, busy: store.busy.contains(s.id), why: store.why(s.id))
+                    SessionRow(session: s, busy: store.busy.contains(s.id), why: store.why(s.id), selected: store.selection.contains(s.id))
                         .tag(s.id)
                         .contextMenu { rowMenu(s) }
                 }

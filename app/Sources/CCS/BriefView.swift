@@ -72,7 +72,7 @@ struct BriefView: View {
             StatTile(symbol: "text.bubble.fill", value: "\(session.prompts)", label: "prompts", color: .blue)
             StatTile(symbol: "calendar", value: "\(daysActive)", label: daysActive == 1 ? "day" : "days", color: .purple)
             StatTile(symbol: "checklist", value: "\(data.progress.done)/\(data.steps.count)", label: "steps done", color: .green)
-            StatTile(symbol: "doc.text.fill", value: "\(data.files.count)", label: "files", color: .orange)
+            StatTile(symbol: "doc.text.fill", value: "\(data.files.count)", label: data.files.count == 1 ? "file" : "files", color: .orange)
         }
     }
 

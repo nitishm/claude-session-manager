@@ -105,6 +105,12 @@ func ParseBrief(txt string) (*BriefData, bool) {
 		steps = append(steps, s)
 	}
 	b.Steps = steps
+	// A brief cannot be done while steps remain open.
+	for _, s := range steps {
+		if b.Status == "done" && s.State != "done" {
+			b.Status = "active"
+		}
+	}
 	var tl []BriefEvent
 	for _, ev := range b.Timeline {
 		ev.When, ev.Text, ev.Outcome = Clean(ev.When, 12), Clean(ev.Text, 90), Clean(ev.Outcome, 90)

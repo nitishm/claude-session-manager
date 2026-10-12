@@ -35,6 +35,7 @@ struct SessionRow: View {
     let session: Session
     let busy: Bool
     let why: String?
+    var selected = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -45,7 +46,7 @@ struct SessionRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.displayLabel).lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(session.dir).foregroundStyle(session.dirGone ? Color.red : Color.accentColor)
+                    Text(session.dir).foregroundStyle(session.dirGone ? Color.red : (selected ? Color.white.opacity(0.85) : Color.accentColor))
                     if !session.repo.isEmpty { Text(session.repo).foregroundStyle(.secondary) }
                     if let why { Text(why).foregroundStyle(.secondary).italic() }
                 }
@@ -53,8 +54,8 @@ struct SessionRow: View {
             }
             Spacer(minLength: 8)
             ForEach(session.tags.prefix(2), id: \.self) { t in
-                Text("#" + t).font(.caption2.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Theme.tag(t).opacity(0.14), in: Capsule())
+                Text("#" + t).font(.caption2.weight(.medium)).foregroundStyle(selected ? Color.white : Theme.tag(t)).padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(selected ? Color.white.opacity(0.25) : Theme.tag(t).opacity(0.14), in: Capsule())
             }
             TimelineView(.periodic(from: .now, by: 30)) { ctx in
                 Text(ago(session.mtime, now: ctx.date)).foregroundStyle(.secondary).monospacedDigit()
