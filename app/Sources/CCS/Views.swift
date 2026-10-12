@@ -83,21 +83,11 @@ struct DetailView: View {
                     if let d = store.briefData { BriefView(store: store, session: session, data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
-                section(session.summary.isEmpty ? "First ask → last ask" : "Summary") {
-                    Text(session.excerpt).textSelection(.enabled)
+                if !session.summary.isEmpty {
+                    section("Summary") { Text(session.excerpt).textSelection(.enabled) }
                 }
-                if !session.turns.isEmpty {
-                    section("Recent conversation") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(session.turns.enumerated()), id: \.offset) { _, t in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text(t.user ? "you" : "claude").font(.caption.bold())
-                                        .foregroundStyle(t.user ? Color.accentColor : Color.green).frame(width: 44, alignment: .leading)
-                                    Text(t.text).textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
+                if brief == nil, !store.briefBusy {
+                    Text("Press Brief for a visual overview of this session.").font(.callout).foregroundStyle(.secondary)
                 }
                 section("Resume") {
                     Text(store.resumes[session.id] ?? "…").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
