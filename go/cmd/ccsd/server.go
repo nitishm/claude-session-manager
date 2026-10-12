@@ -461,13 +461,13 @@ func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !b.Force {
-		if t, ok := s.eng.BriefCached(x); ok {
-			reply(w, 200, briefReply(t, true))
+		if bi, ok := s.eng.BriefLatest(x); ok {
+			reply(w, 200, briefReply(bi.Text, true, bi))
 			return
 		}
 	}
 	if b.CachedOnly {
-		reply(w, 200, briefReply("", false))
+		reply(w, 200, briefReply("", false, engine.BriefInfo{}))
 		return
 	}
 	txt, err := s.eng.Brief(x)
@@ -475,13 +475,16 @@ func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "brief failed: "+err.Error())
 		return
 	}
-	reply(w, 200, briefReply(txt, false))
+	reply(w, 200, briefReply(txt, false, engine.BriefInfo{At: x.MTime}))
 }
 
 // briefReply carries the structured brief as data and the raw text as a fallback. Briefs cached
 // before the structured format are plain text, so data is null for them until regenerated.
-func briefReply(txt string, cached bool) map[string]any {
-	out := map[string]any{"brief": txt, "cached": cached, "data": nil}
+func briefReply(txt string, cached bool, bi engine.BriefInfo) map[string]any {
+	out := map[string]any{"brief": txt, "cached": cached, "data": nil, "stale": bi.Stale, "at": int64(0)}
+	if !bi.At.IsZero() {
+		out["at"] = bi.At.Unix()
+	}
 	if d, ok := engine.ParseBrief(txt); ok {
 		out["data"] = d
 	}

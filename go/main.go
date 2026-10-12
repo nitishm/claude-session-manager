@@ -102,6 +102,8 @@ type model struct {
 	brief       string
 	briefID     string
 	briefScroll int
+	briefs      map[string]briefEntry // per-session brief shown in the detail pane
+	briefGen    map[string]bool       // brief generations in flight
 	asking      bool
 	askKind     string // "" or "deep": what produced the current result list
 	deepIn      textinput.Model
@@ -185,7 +187,7 @@ func newModel(all []*session) model {
 	boot := engine.BootTime()
 	pre := eng.PreBoot(all, boot)
 	live, _ := eng.ReadPids()
-	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, busy: map[string]bool{}}
+	m := model{askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, busy: map[string]bool{}, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}}
 	m.refilter()
 	return m
 }
@@ -218,7 +220,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if id != mm.lastSel {
 		mm.lastSel, mm.dscroll, mm.confirm = id, 0, ""
 	}
-	return mm, cmd
+	mm, bc := mm.ensureBrief()
+	return mm, tea.Batch(cmd, bc)
 }
 
 func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -351,9 +354,24 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refilter()
 		return m, tagCmd
+	case briefWantMsg:
+		// Only generate if the cursor stayed on the session, so scrolling past sessions costs nothing.
+		s := m.selected()
+		if e, ok := m.briefs[msg.id]; s != nil && s.ID == msg.id && ok && e.text == "" && !e.failed && !m.briefGen[msg.id] {
+			m.briefGen[msg.id] = true
+			return m, briefSession(s)
+		}
+		if e, ok := m.briefs[msg.id]; ok && e.text == "" && !e.failed && !m.briefGen[msg.id] {
+			delete(m.briefs, msg.id) // moved away before the delay ended; revisiting schedules it again
+		}
+		return m, nil
 	case briefMsg:
+		delete(m.briefGen, msg.id)
 		if msg.err == nil {
 			eng.StoreBrief(msg.key, msg.text)
+			m.briefs[msg.id] = briefEntry{text: msg.text, at: msg.at}
+		} else {
+			m.briefs[msg.id] = briefEntry{failed: true}
 		}
 		if m.briefOn && m.briefID == msg.id {
 			m.briefBusy = false
@@ -362,6 +380,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.flash("brief failed: " + msg.err.Error())
 			}
 			m.brief = msg.text
+		} else if msg.err != nil {
+			return m, m.flash("brief failed: " + msg.err.Error())
 		}
 		return m, nil
 	case tagMsg:
@@ -482,6 +502,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r":
 				if s := m.selected(); s != nil && !m.briefBusy {
 					m.brief, m.briefBusy, m.briefScroll = "", true, 0
+					m.briefGen[s.ID] = true
 					return m, briefSession(s)
 				}
 			}
@@ -630,11 +651,15 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.flash("no transcript yet: ask something in that session first")
 			}
 			m.briefOn, m.briefID, m.briefScroll = true, s.ID, 0
-			if txt, ok := eng.BriefCached(s); ok {
-				m.brief, m.briefBusy = txt, false
+			if e := m.briefs[s.ID]; e.text != "" { // a stale brief still shows; r regenerates
+				m.brief, m.briefBusy = e.text, false
 				return m, nil
 			}
 			m.brief, m.briefBusy = "", true
+			if m.briefGen[s.ID] { // the auto-generation already running will fill the popup
+				return m, nil
+			}
+			m.briefGen[s.ID] = true
 			return m, briefSession(s)
 		case "D":
 			m.deepIn.Focus()
@@ -1163,14 +1188,7 @@ func (m model) detail(w, h int) string {
 	} else if m.pre[s.ID] {
 		b.WriteString(sWarn.Render("↻ was open when the machine restarted") + "\n")
 	}
-	switch {
-	case s.Summary != "":
-		b.WriteString(sec("SUMMARY") + sGood.Render(s.Summary) + "\n")
-	case m.busy[s.ID]:
-		b.WriteString(sec("SUMMARY") + sDim.Render("generating…") + "\n")
-	default:
-		b.WriteString(sec("SUMMARY") + sDim.Render("press s to generate") + "\n")
-	}
+	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 
 	lines := strings.Split(lipgloss.NewStyle().Width(w).Render(b.String()), "\n")

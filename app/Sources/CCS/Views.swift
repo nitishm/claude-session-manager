@@ -79,15 +79,13 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 actions
+                if brief != nil, store.briefStale { staleBanner }
                 if let t = brief {
                     if let d = store.briefData { BriefView(store: store, session: session, data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
-                if !session.summary.isEmpty {
-                    section("Summary") { Text(session.excerpt).textSelection(.enabled) }
-                }
                 if brief == nil, !store.briefBusy {
-                    Text("Press Brief for a visual overview of this session.").font(.callout).foregroundStyle(.secondary)
+                    Text("No brief for this session.").font(.callout).foregroundStyle(.secondary)
                 }
                 section("Resume") {
                     Text(store.resumes[session.id] ?? "…").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
@@ -98,8 +96,21 @@ struct DetailView: View {
         }
         .task(id: session.id) {
             await store.loadResume(session.id)
-            await store.showCachedBrief(session.id)
+            await store.ensureBrief(session.id, canMake: !session.stub)
         }
+    }
+
+    private var staleBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text("Stale: this brief is from \(ago(store.briefAt)) ago and the session has changed since.").font(.callout)
+            Spacer()
+            Button { Task { await store.loadBrief(session.id, force: true) } } label: { Label("Regenerate", systemImage: "arrow.clockwise") }
+                .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small).disabled(store.briefBusy).clickable("stale:regen", enabled: !store.briefBusy)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.orange.opacity(0.4)))
     }
 
     private var brief: String? {
@@ -113,7 +124,7 @@ struct DetailView: View {
                 Button { store.reveal(URL(fileURLWithPath: session.cwd)) } label: {
                     Label(session.dir, systemImage: "folder").foregroundStyle(session.dirGone ? Color.red : (store.hover == "dir" ? Color.accentColor : Color.secondary))
                 }
-                .buttonStyle(.plain).onHover { store.setHover("dir", $0) }.disabled(session.dirGone).help("Reveal in Finder")
+                .buttonStyle(.plain).onHover { store.setHover("dir", $0) }.disabled(session.dirGone).clickable(enabled: !session.dirGone).help("Reveal in Finder")
                 if !session.repo.isEmpty { Label(session.repo, systemImage: "arrow.triangle.branch") }
                 if let live = session.live { Label(live.status, systemImage: "circle.fill").foregroundStyle(.green) }
             }
@@ -126,7 +137,7 @@ struct DetailView: View {
                 if session.stale { Text("stale").foregroundStyle(.orange) }
             }
             .font(.caption).foregroundStyle(.secondary)
-            if !session.pr.isEmpty, let url = URL(string: session.pr) { Link(session.pr, destination: url).font(.caption) }
+            if !session.pr.isEmpty, let url = URL(string: session.pr) { Link(session.pr, destination: url).font(.caption).clickable() }
             if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.caption).foregroundStyle(.red) }
             HStack {
                 ForEach(session.tags, id: \.self) { t in
@@ -134,9 +145,9 @@ struct DetailView: View {
                         Text("#" + t).font(.caption.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Theme.tag(t).opacity(store.hover == "tag:" + t ? 0.28 : 0.14), in: Capsule())
                     }
-                    .buttonStyle(.plain).onHover { store.setHover("tag:" + t, $0) }.help("Filter the list by #\(t)")
+                    .buttonStyle(.plain).onHover { store.setHover("tag:" + t, $0) }.clickable().help("Filter the list by #\(t)")
                 }
-                Button(session.tags.isEmpty ? "Add tags" : "Edit tags") { store.editingTags = true; store.tagDraft = session.tags.joined(separator: " ") }.buttonStyle(.link).font(.caption)
+                Button(session.tags.isEmpty ? "Add tags" : "Edit tags") { store.editingTags = true; store.tagDraft = session.tags.joined(separator: " ") }.buttonStyle(.link).font(.caption).clickable("edittags")
             }
         }
     }
@@ -144,13 +155,13 @@ struct DetailView: View {
     private var actions: some View {
         HStack {
             Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume", systemImage: "play.fill") }
-                .buttonStyle(.borderedProminent).disabled(session.dirGone || session.stub)
+                .buttonStyle(.borderedProminent).disabled(session.dirGone || session.stub).clickable("act:resume", enabled: !(session.dirGone || session.stub))
             Button { Task { await store.open([session.id], fork: true) } } label: { Label("Fork", systemImage: "arrow.triangle.branch") }
-                .disabled(session.dirGone || session.stub)
-            Button { Task { await store.loadBrief(session.id, force: brief != nil) } } label: { Label("Brief", systemImage: "doc.text.magnifyingglass") }
-                .disabled(session.stub || store.briefBusy)
+                .disabled(session.dirGone || session.stub).clickable("act:fork", enabled: !(session.dirGone || session.stub))
+            Button { Task { await store.loadBrief(session.id, force: true) } } label: { Label(brief != nil ? "Regenerate" : "Brief", systemImage: brief != nil ? "arrow.clockwise" : "doc.text.magnifyingglass") }
+                .disabled(session.stub || store.briefBusy).clickable("act:brief", enabled: !(session.stub || store.briefBusy))
             Button { Task { await store.summarize(session.id) } } label: { Label("Summarize", systemImage: "text.badge.star") }
-                .disabled(session.stub || store.busy.contains(session.id))
+                .disabled(session.stub || store.busy.contains(session.id)).clickable("act:sum", enabled: !(session.stub || store.busy.contains(session.id)))
             Spacer()
         }
     }
@@ -204,7 +215,7 @@ struct FlowTags: View {
         // Simple wrapping row: tags are few, so a grid of adaptive columns is enough.
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(tags, id: \.self) { t in
-                Button("#" + t) { tap(t) }.buttonStyle(.bordered).controlSize(.small)
+                Button("#" + t) { tap(t) }.buttonStyle(.bordered).controlSize(.small).clickable()
             }
         }
     }

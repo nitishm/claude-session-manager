@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"ccsgo/engine"
@@ -225,10 +227,16 @@ func (m model) briefBody() []string {
 	case m.brief == "":
 		return []string{sDim.Render("no brief yet")}
 	}
-	if b, ok := engine.ParseBrief(m.brief); ok {
-		return briefVisual(b, w-4)
+	var warn []string
+	if s := m.selected(); s != nil {
+		if e := m.briefs[s.ID]; e.stale(s) {
+			warn = []string{sWarn.Render(e.staleNote(s)), sDim.Render("press r to regenerate"), ""}
+		}
 	}
-	return briefLines(m.brief, w) // a brief cached before the structured format; r regenerates
+	if b, ok := engine.ParseBrief(m.brief); ok {
+		return append(warn, briefVisual(b, w-4)...)
+	}
+	return append(warn, briefLines(m.brief, w)...) // a brief cached before the structured format; r regenerates
 }
 
 // briefMaxScroll is the largest scroll offset that still fills the window.
@@ -250,4 +258,62 @@ func (m model) briefPopup() string {
 	}
 	txt := sBold.Render(title) + "\n\n" + strings.Join(body[sc:end], "\n") + "\n\n" + sDim.Render(foot)
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 2).Width(w).Render(txt)
+}
+
+// briefEntry is the brief shown in the detail pane. An entry with no text is waiting on, or failed at, generation.
+type briefEntry struct {
+	text   string
+	at     time.Time // the session's mtime when the brief was made
+	failed bool
+}
+
+func (e briefEntry) stale(s *session) bool { return e.text != "" && e.at.Unix() != s.MTime.Unix() }
+
+func (e briefEntry) staleNote(s *session) string {
+	return "⚠ stale: brief is from " + engine.AgoLong(e.at) + " ago and the session has changed"
+}
+
+// ensureBrief loads the selected session's cached brief, or schedules one when none exists.
+// Generation waits out a short delay so scrolling past sessions never spends tokens.
+func (m model) ensureBrief() (model, tea.Cmd) {
+	s := m.selected()
+	if s == nil || s.Path == "" || s.Prompts == 0 {
+		return m, nil
+	}
+	if _, ok := m.briefs[s.ID]; ok {
+		return m, nil
+	}
+	if bi, ok := eng.BriefLatest(s); ok {
+		m.briefs[s.ID] = briefEntry{text: bi.Text, at: bi.At}
+		return m, nil
+	}
+	m.briefs[s.ID] = briefEntry{}
+	id := s.ID
+	return m, tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg { return briefWantMsg{id: id} })
+}
+
+// briefSection is the detail pane's BRIEF block.
+func (m model) briefSection(s *session, w int) string {
+	e := m.briefs[s.ID]
+	switch {
+	case e.text != "":
+		var out []string
+		if e.stale(s) {
+			out = append(out, sWarn.Render(e.staleNote(s)+" · S then r regenerates"))
+		}
+		if b, ok := engine.ParseBrief(e.text); ok {
+			out = append(out, briefVisual(b, w)...)
+		} else {
+			out = append(out, briefLines(e.text, w)...)
+		}
+		return strings.Join(out, "\n")
+	case e.failed:
+		return sBad.Render("brief failed · S then r retries")
+	case m.briefGen[s.ID]:
+		return sDim.Render("asking claude… (5-15s)")
+	case s.Path == "" || s.Prompts == 0:
+		return sDim.Render("no transcript yet")
+	default:
+		return sDim.Render("preparing brief…")
+	}
 }

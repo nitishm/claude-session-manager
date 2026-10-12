@@ -94,6 +94,8 @@ final class Store {
     var briefText = ""
     var briefData: BriefData?
     var briefBusy = false
+    var briefStale = false
+    var briefAt = Date.distantPast
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
     private var pending: Task<Void, Never>?
@@ -253,14 +255,30 @@ final class Store {
         if let r = await run("detail", refetch: false, { try $0.session(id) }), let cmd = r.resume { resumes[id] = cmd }
     }
 
-    /// Shows a brief that is already cached for this session. Never calls the model.
+    /// Shows the newest cached brief for this session, stale or not. Never calls the model.
     func showCachedBrief(_ id: String) async {
         guard briefID != id, !briefBusy else { return }
         if let r = await run("brief", refetch: false, { try $0.brief(id, force: false, cachedOnly: true) }), r.data != nil || !r.brief.isEmpty {
-            briefID = id
-            briefText = r.brief
-            briefData = r.data
+            apply(r, id)
         }
+    }
+
+    /// Visiting a session shows its cached brief at once. With none, one is generated after a short
+    /// pause, so clicking past sessions costs nothing. A stale brief is never regenerated on its own.
+    func ensureBrief(_ id: String, canMake: Bool) async {
+        await showCachedBrief(id)
+        guard canMake, briefID != id else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        if Task.isCancelled || selection != [id] || briefID == id { return }
+        await loadBrief(id)
+    }
+
+    private func apply(_ r: API.BriefReply, _ id: String) {
+        briefID = id
+        briefText = r.brief
+        briefData = r.data
+        briefStale = r.stale ?? false
+        briefAt = Date(timeIntervalSince1970: r.at ?? 0)
     }
 
     func loadBrief(_ id: String, force: Bool = false) async {
@@ -268,10 +286,10 @@ final class Store {
         briefBusy = true
         briefText = ""
         briefData = nil
+        briefStale = false
         defer { briefBusy = false }
         if let r = await run("brief", refetch: false, { try $0.brief(id, force: force) }), briefID == id {
-            briefText = r.brief
-            briefData = r.data
+            apply(r, id)
         } else if briefID == id {
             briefID = nil
         }

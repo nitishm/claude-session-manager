@@ -384,3 +384,24 @@ func TestReadExchanges(t *testing.T) {
 		t.Errorf("pairing wrong: %+v", ex)
 	}
 }
+
+func TestBriefLatestStale(t *testing.T) {
+	e := &Engine{CacheDir: t.TempDir()}
+	s := &Session{ID: "abc", MTime: time.Unix(1000, 0)}
+	if _, ok := e.BriefLatest(s); ok {
+		t.Fatal("nothing cached yet")
+	}
+	e.StoreBrief(BriefKey(s), "old")
+	if bi, ok := e.BriefLatest(s); !ok || bi.Stale || bi.Text != "old" {
+		t.Errorf("exact = %+v %v", bi, ok)
+	}
+	s.MTime = time.Unix(2000, 0)
+	bi, ok := e.BriefLatest(s)
+	if !ok || !bi.Stale || bi.Text != "old" || bi.At.Unix() != 1000 {
+		t.Errorf("after the session changed = %+v %v", bi, ok)
+	}
+	other := &Session{ID: "abcd", MTime: time.Unix(1000, 0)}
+	if _, ok := e.BriefLatest(other); ok {
+		t.Error("a different session id must not match")
+	}
+}

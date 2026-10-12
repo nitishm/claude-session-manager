@@ -163,7 +163,7 @@ struct API: Sendable {
         try decode(http.request("POST", "/open", body: json(OpenReq(ids: ids, tab: tab, fork: fork))), Opened.self)
     }
 
-    struct BriefReply: Decodable { let brief: String; let cached: Bool; let data: BriefData? }
+    struct BriefReply: Decodable { let brief: String; let cached: Bool; let data: BriefData?; let stale: Bool?; let at: Double? }
     func brief(_ id: String, force: Bool, cachedOnly: Bool = false) throws -> BriefReply {
         try decode(http.request("POST", "/ai/brief", body: json(["id": AnyEncodable(id), "force": AnyEncodable(force), "cachedOnly": AnyEncodable(cachedOnly)])), BriefReply.self)
     }

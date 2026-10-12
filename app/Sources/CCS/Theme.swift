@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// One place for the app's look: palette, icons per kind of work, and the card style.
@@ -88,4 +89,27 @@ struct StatTile: View {
         }
         .card(padding: 10)
     }
+}
+
+/// Marks a control as clickable: pointing-hand cursor on hover, plus a highlight when a key is given.
+/// Hover state lives in the Store because @State is unavailable without Xcode.
+struct Clickable: ViewModifier {
+    let key: String?
+    let enabled: Bool
+    var store = Store.shared
+
+    func body(content: Content) -> some View {
+        let on = enabled && key != nil && store.hover == key
+        content
+            .background(on ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .onHover { inside in
+                guard enabled else { return }
+                if let key { store.setHover(key, inside) }
+                if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+            }
+    }
+}
+
+extension View {
+    func clickable(_ key: String? = nil, enabled: Bool = true) -> some View { modifier(Clickable(key: key, enabled: enabled)) }
 }

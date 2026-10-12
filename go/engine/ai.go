@@ -273,6 +273,36 @@ func (e *Engine) BriefCached(s *Session) (string, bool) {
 	return t, ok
 }
 
+// BriefInfo is a cached brief plus how old it is relative to the session.
+type BriefInfo struct {
+	Text  string
+	At    time.Time // when the session looked like this brief's snapshot (its mtime then)
+	Stale bool      // the session has changed since
+}
+
+// BriefLatest returns the newest cached brief for the session, current or not. It never calls the model.
+func (e *Engine) BriefLatest(s *Session) (BriefInfo, bool) {
+	m := e.loadBriefs()
+	if t, ok := m[BriefKey(s)]; ok {
+		return BriefInfo{Text: t, At: s.MTime}, true
+	}
+	var best int64 = -1
+	var txt string
+	for k, t := range m {
+		id, ts, ok := strings.Cut(k, ":")
+		if !ok || id != s.ID {
+			continue
+		}
+		if n, err := strconv.ParseInt(ts, 10, 64); err == nil && n > best {
+			best, txt = n, t
+		}
+	}
+	if best < 0 {
+		return BriefInfo{}, false
+	}
+	return BriefInfo{Text: txt, At: time.Unix(best, 0), Stale: true}, true
+}
+
 // day turns an RFC3339 timestamp into a short local date such as "Oct 02".
 func day(ts string) string {
 	if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {

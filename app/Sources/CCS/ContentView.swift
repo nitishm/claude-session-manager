@@ -33,7 +33,7 @@ struct ContentView: View {
                     Image(systemName: store.hitKind == "deep" ? "doc.text.magnifyingglass" : "sparkles")
                     Text("\(store.hitKind == "deep" ? "Deep search" : "Ask"): \(store.hitQuery)").lineLimit(1)
                     Spacer()
-                    Button("Clear") { store.clearHits() }.buttonStyle(.link)
+                    Button("Clear") { store.clearHits() }.buttonStyle(.link).clickable("clearhits")
                 }
                 .font(.callout).padding(.horizontal, 12).padding(.vertical, 6).background(.quaternary)
             }
@@ -61,7 +61,7 @@ struct ContentView: View {
         } description: {
             Text(store.query.isEmpty && !store.filtersActive ? "Nothing found in ~/.claude/projects." : "Nothing matches this search and these filters.")
         } actions: {
-            if !store.query.isEmpty || store.filtersActive { Button("Clear filters") { store.clearFilters() } }
+            if !store.query.isEmpty || store.filtersActive { Button("Clear filters") { store.clearFilters() }.clickable("clearf") }
         }
     }
 

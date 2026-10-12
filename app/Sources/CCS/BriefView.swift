@@ -53,7 +53,7 @@ struct BriefView: View {
                     .background(Theme.violet.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume session", systemImage: "play.fill") }
-                    .buttonStyle(.borderedProminent).tint(Theme.violet).controlSize(.regular).disabled(!canResume)
+                    .buttonStyle(.borderedProminent).tint(Theme.violet).controlSize(.regular).disabled(!canResume).clickable("hero:resume", enabled: canResume)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,7 +141,7 @@ struct BriefView: View {
                     HStack(spacing: 8) {
                         Text("you are here").font(.caption.bold()).foregroundStyle(status.color)
                         Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume here", systemImage: "play.fill").font(.caption) }
-                            .buttonStyle(.link).disabled(!canResume)
+                            .buttonStyle(.link).disabled(!canResume).clickable("here:resume", enabled: canResume)
                     }
                     .padding(.top, 2)
                 }
@@ -220,7 +220,7 @@ struct BriefView: View {
             .frame(maxWidth: 300, alignment: .leading)
             .background(hovered(key) && url != nil ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05), in: Capsule())
         }
-        .buttonStyle(.plain).disabled(url == nil).onHover { store.setHover(key, $0) }
+        .buttonStyle(.plain).disabled(url == nil).onHover { store.setHover(key, $0) }.clickable(enabled: url != nil)
         .help(url.map { "Open " + $0.path } ?? "Not found under \(session.dir)")
         .contextMenu {
             if let url {

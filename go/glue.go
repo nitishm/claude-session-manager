@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -33,9 +34,11 @@ type (
 	}
 	briefMsg struct {
 		id, key, text string
+		at            time.Time // the session's mtime when the brief was made
 		err           error
 	}
-	askMsg struct {
+	briefWantMsg struct{ id string }
+	askMsg       struct {
 		kind  string // "" = ask claude, "deep" = transcript scan
 		query string
 		hits  []engine.Hit
@@ -61,7 +64,7 @@ func summarize(s *session) tea.Cmd {
 func briefSession(s *session) tea.Cmd {
 	return func() tea.Msg {
 		txt, err := eng.Brief(s)
-		return briefMsg{id: s.ID, key: engine.BriefKey(s), text: txt, err: err}
+		return briefMsg{id: s.ID, key: engine.BriefKey(s), at: s.MTime, text: txt, err: err}
 	}
 }
 
