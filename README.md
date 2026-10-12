@@ -55,3 +55,16 @@ cd .. && CCS_BIN=$PWD/ccs-go uv run --with pyte python tests/pty/new_test.py
 ## Keys
 
 Press `?` in the app for the full list and legend.
+
+## Mac app (`app/`)
+
+SwiftUI front end over `ccsd`. macOS 14+, Mac only.
+
+```sh
+cd app && ./build.sh        # build/CCS.app, ccsd bundled inside
+./build.sh run              # build, then open
+```
+
+- Plain `swiftc`, no Xcode. SwiftPM and the `@State` macro need Xcode, so UI state lives in an `@Observable` `Store`.
+- The app starts `ccsd` if none is running and stops it on quit only if it started it.
+- Talks to `~/.cache/ccs/ccsd.sock` with a small POSIX-socket HTTP client (`URLSession` has no unix sockets).
