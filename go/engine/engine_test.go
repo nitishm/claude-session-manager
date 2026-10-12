@@ -329,3 +329,22 @@ func TestSummaryAndBriefCache(t *testing.T) {
 		t.Errorf("brief cache = %q %v", got, ok)
 	}
 }
+
+func TestParseBrief(t *testing.T) {
+	good := "sure!\n{\"goal\":\"ship it\",\"status\":\"weird\",\"steps\":[{\"text\":\"a\",\"state\":\"done\"},{\"text\":\"b\",\"state\":\"nope\"},{\"text\":\"\",\"state\":\"done\"}],\"files\":[\"x\"]}"
+	b, ok := ParseBrief(good)
+	if !ok {
+		t.Fatal("not parsed")
+	}
+	if b.Status != "active" || len(b.Steps) != 2 || b.Steps[1].State != "todo" {
+		t.Fatalf("not normalized: %+v", b)
+	}
+	if d, n := b.Progress(); d != 1 || n != 2 {
+		t.Fatalf("progress %d/%d", d, n)
+	}
+	for _, bad := range []string{"", "plain text brief\n- a", "{\"goal\":\"\"}", "{\"goal\":\"g\"}", "{broken"} {
+		if _, ok := ParseBrief(bad); ok {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

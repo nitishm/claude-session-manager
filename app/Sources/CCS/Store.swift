@@ -51,6 +51,7 @@ final class Store {
     // Brief popup state for the selected session.
     var briefID: String?
     var briefText = ""
+    var briefData: BriefData?
     var briefBusy = false
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
@@ -215,9 +216,11 @@ final class Store {
         briefID = id
         briefBusy = true
         briefText = ""
+        briefData = nil
         defer { briefBusy = false }
         if let r = await run("brief", refetch: false, { try $0.brief(id, force: force) }), briefID == id {
             briefText = r.brief
+            briefData = r.data
         } else if briefID == id {
             briefID = nil
         }

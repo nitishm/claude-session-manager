@@ -78,7 +78,9 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 actions
-                if let t = brief { section("Brief") { Text(t).textSelection(.enabled) } }
+                if let t = brief {
+                    if let d = store.briefData { BriefView(data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
+                }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
                 section(session.summary.isEmpty ? "First ask → last ask" : "Summary") {
                     Text(session.excerpt).textSelection(.enabled)

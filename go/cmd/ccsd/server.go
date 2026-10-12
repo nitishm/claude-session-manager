@@ -461,7 +461,7 @@ func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 	}
 	if !b.Force {
 		if t, ok := s.eng.BriefCached(x); ok {
-			reply(w, 200, map[string]any{"brief": t, "cached": true})
+			reply(w, 200, briefReply(t, true))
 			return
 		}
 	}
@@ -470,7 +470,17 @@ func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "brief failed: "+err.Error())
 		return
 	}
-	reply(w, 200, map[string]any{"brief": txt, "cached": false})
+	reply(w, 200, briefReply(txt, false))
+}
+
+// briefReply carries the structured brief as data and the raw text as a fallback. Briefs cached
+// before the structured format are plain text, so data is null for them until regenerated.
+func briefReply(txt string, cached bool) map[string]any {
+	out := map[string]any{"brief": txt, "cached": cached, "data": nil}
+	if d, ok := engine.ParseBrief(txt); ok {
+		out["data"] = d
+	}
+	return out
 }
 
 func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) {

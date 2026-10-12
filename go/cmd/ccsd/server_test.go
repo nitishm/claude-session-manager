@@ -227,7 +227,7 @@ func TestAIEndpoints(t *testing.T) {
 		t.Errorf("summary not stored on session: %q", v.Summary)
 	}
 
-	fakeClaude(t, "Goal\n- ship it")
+	fakeClaude(t, `{"goal":"ship it","status":"active","steps":[{"text":"a","state":"done"}]}`)
 	var br map[string]any
 	call(t, ts, "POST", "/ai/brief", map[string]any{"id": "aaa"}, &br)
 	if br["cached"] != false || !strings.Contains(br["brief"].(string), "ship it") {
@@ -236,6 +236,9 @@ func TestAIEndpoints(t *testing.T) {
 	call(t, ts, "POST", "/ai/brief", map[string]any{"id": "aaa"}, &br)
 	if br["cached"] != true {
 		t.Errorf("second brief should be cached: %v", br)
+	}
+	if d, _ := br["data"].(map[string]any); d == nil || d["goal"] != "ship it" || d["status"] != "active" {
+		t.Errorf("structured data missing: %v", br["data"])
 	}
 
 	fakeClaude(t, `{"1":["login","auth"]}`)

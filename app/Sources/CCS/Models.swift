@@ -143,3 +143,18 @@ func ago(_ d: Date, now: Date = Date()) -> String {
     default: return "now"
     }
 }
+
+/// The structured brief ccsd returns in `data`. Null when the cached brief predates the format.
+struct BriefData: Codable, Hashable {
+    struct Step: Codable, Hashable { let text: String; let state: String }
+    struct Event: Codable, Hashable { let when: String; let text: String }
+    let goal: String
+    let status: String
+    let statusNote: String
+    let next: String
+    @NullAsEmpty var steps: [Step]
+    @NullAsEmpty var timeline: [Event]
+    @NullAsEmpty var files: [String]
+
+    var progress: (done: Int, total: Int) { (steps.filter { $0.state == "done" }.count, steps.count) }
+}
