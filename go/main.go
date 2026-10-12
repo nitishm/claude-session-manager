@@ -1170,6 +1170,9 @@ func (m model) detailLines(w int) []string {
 		b.WriteString(sWarn.Render("↻ was open when the machine restarted") + "\n")
 	}
 	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
+	if fs := factsSection(s, w-1); fs != "" {
+		b.WriteString(fs + "\n")
+	}
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 
 	return strings.Split(lipgloss.NewStyle().Width(w).Render(b.String()), "\n")

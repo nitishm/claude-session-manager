@@ -159,3 +159,40 @@ struct BriefData: Codable, Hashable {
 
     var progress: (done: Int, total: Int) { (steps.filter { $0.state == "done" }.count, steps.count) }
 }
+
+/// Numbers read from a transcript (GET /sessions/{id}/facts). No model call is behind them.
+struct FileTouch: Codable, Hashable {
+    let path: String
+    let rel: String
+    let edits: Int
+    let reads: Int
+}
+
+struct Facts: Codable, Hashable {
+    let model: String
+    let turns: Int
+    let `in`: Int64
+    let out: Int64
+    let cacheRead: Int64
+    let cacheWrite: Int64
+    let activeMin: Int
+    @NullAsEmpty var files: [FileTouch]
+    @NullAsEmpty var commands: [String]
+    let commandCount: Int
+
+    var cacheHit: Int {
+        let tot = `in` + cacheRead + cacheWrite
+        return tot > 0 ? Int(cacheRead * 100 / tot) : 0
+    }
+}
+
+func compact(_ n: Int64) -> String {
+    if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1e6) }
+    if n >= 1000 { return String(format: "%.1fk", Double(n) / 1e3) }
+    return "\(n)"
+}
+
+func duration(_ min: Int) -> String {
+    if min < 60 { return "\(min)m" }
+    return min % 60 == 0 ? "\(min / 60)h" : "\(min / 60)h \(min % 60)m"
+}

@@ -84,6 +84,7 @@ struct DetailView: View {
                     if let d = store.briefData { BriefView(store: store, session: session, data: d) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
+                if let f = store.facts[session.id] { FactsView(store: store, session: session, facts: f) }
                 if brief == nil, !store.briefBusy {
                     Text("No brief for this session.").font(.callout).foregroundStyle(.secondary)
                 }
@@ -96,6 +97,7 @@ struct DetailView: View {
         }
         .task(id: session.id) {
             await store.loadResume(session.id)
+            await store.loadFacts(session.id)
             await store.ensureBrief(session.id, canMake: !session.stub)
         }
     }

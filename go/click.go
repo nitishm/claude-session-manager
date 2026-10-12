@@ -70,6 +70,14 @@ func (m model) clickDetail(col, row, w int) tea.Cmd {
 		return m.flash("opened " + tok)
 	}
 	path := resolvePath(tok, s.Cwd)
+	if path == "" && strings.HasPrefix(tok, "…") && s.Path != "" { // a path cut for width: match its tail
+		for _, f := range eng.Facts(s).Files {
+			if strings.HasSuffix(f.Path, strings.TrimPrefix(tok, "…")) {
+				path = f.Path
+				break
+			}
+		}
+	}
 	if path == "" {
 		return nil
 	}

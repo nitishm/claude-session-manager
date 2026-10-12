@@ -96,6 +96,7 @@ final class Store {
     var briefBusy = false
     var briefStale = false
     var briefAt = Date.distantPast
+    private(set) var facts: [String: Facts] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
     private var pending: Task<Void, Never>?
@@ -243,6 +244,10 @@ final class Store {
         for id in ids { busy.insert(id) }
         defer { for id in ids { busy.remove(id) } }
         if await run("auto-tag", { try $0.autoTag(ids) }) != nil { say("tagged \(ids.count) session(s)") }
+    }
+
+    func loadFacts(_ id: String) async {
+        if let f = await run("facts", refetch: false, { try $0.facts(id) }) { facts[id] = f }
     }
 
     func loadResume(_ id: String) async {

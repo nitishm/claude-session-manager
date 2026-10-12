@@ -363,3 +363,17 @@ func TestJSONContractKeys(t *testing.T) {
 		t.Errorf("tag keys: %v", tl[0])
 	}
 }
+
+func TestFactsEndpoint(t *testing.T) {
+	ts, _, _ := setup(t)
+	var f engine.Facts
+	if c := call(t, ts, "GET", "/sessions/aaa/facts", nil, &f); c != 200 {
+		t.Fatalf("status %d", c)
+	}
+	if f.Files == nil || f.Commands == nil || f.Tools == nil {
+		t.Errorf("lists must encode as [] and {}, not null: %+v", f)
+	}
+	if c := call(t, ts, "GET", "/sessions/nope/facts", nil, &f); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+}

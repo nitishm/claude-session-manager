@@ -27,6 +27,9 @@ type Engine struct {
 	repos   map[string]repoEntry
 	dirs    map[string]dirStat
 
+	factsMu sync.Mutex
+	facts   map[string]*Facts // transcript facts by session id and mtime
+
 	sem chan struct{} // limits parallel claude -p calls
 }
 

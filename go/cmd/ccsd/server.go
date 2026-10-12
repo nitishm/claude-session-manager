@@ -182,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	m.HandleFunc("GET /sessions", s.listSessions)
 	m.HandleFunc("GET /sessions/{id}", s.getSession)
+	m.HandleFunc("GET /sessions/{id}/facts", s.getFacts)
 	m.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -277,6 +278,18 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	v := s.view(x)
 	v.Resume = engine.ResumeCmd("claude", x, false)
 	reply(w, 200, v)
+}
+
+// getFacts returns numbers read from the transcript (tokens, files touched, commands). No model call.
+func (s *Server) getFacts(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	s.mu.Unlock()
+	if x == nil || x.Path == "" {
+		fail(w, 404, "no such session")
+		return
+	}
+	reply(w, 200, s.eng.Facts(x))
 }
 
 func (s *Server) pin(w http.ResponseWriter, r *http.Request) {
