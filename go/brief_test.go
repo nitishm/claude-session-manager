@@ -41,7 +41,7 @@ func TestBriefVisualWidths(t *testing.T) {
 			}
 		}
 		joined := strings.Join(lines, "\n")
-		for _, want := range []string{"GOAL", "STATE", "NEXT", "STEPS", "TIMELINE", "3 of 7", "you are here"} {
+		for _, want := range []string{"GOAL", "STATE", "NEXT", "STEPS", "KEY OUTCOMES", "3 of 7", "you are here"} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("w=%d: missing %q", w, want)
 			}
