@@ -16,7 +16,7 @@ struct AskView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Ask this session").font(.headline)
+                Text("Ask this session").font(Theme.heading(16))
                 Spacer()
                 if !history.isEmpty {
                     Button("Clear") { store.clearQA(session.id) }.buttonStyle(.link).font(.caption).clickable("ask:clear")

@@ -91,7 +91,7 @@ struct BriefView: View {
             Button { withAnimation(.easeInOut(duration: 0.15)) { store.toggle(id) } } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.right").font(.caption.bold()).rotationEffect(.degrees(open ? 90 : 0)).frame(width: 12)
-                    Text(title).font(.system(.headline, design: .rounded))
+                    Text(title).font(Theme.heading(16))
                     Text(note).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }

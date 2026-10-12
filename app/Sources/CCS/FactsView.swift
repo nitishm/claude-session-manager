@@ -10,7 +10,7 @@ struct FactsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Activity").font(.system(.headline, design: .rounded))
+            Text("Activity").font(Theme.heading(16))
             HStack(spacing: 10) {
                 chip("bubble.left.and.bubble.right.fill", "\(facts.turns)", "turns", .blue)
                 if facts.activeMin > 0 { chip("clock.fill", duration(facts.activeMin), "active", .purple) }
