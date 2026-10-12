@@ -137,6 +137,7 @@ func helpPopup(w, h int) string {
 		k("b", "before reboot"),
 		k("F", "forks + originals"),
 		k("v", "detail pane · J/K scroll"),
+		k("V", "detail pane full screen (v shows the list again)"),
 		k("S", "regenerate the brief (it shows in the detail pane)"),
 		k("z", "stale: ≤2 prompts, >7d old"),
 		k("r", "reload · q quit"),

@@ -83,3 +83,14 @@ func TestSplitResizeClamps(t *testing.T) {
 		}
 	}
 }
+
+func TestFullDetailLayout(t *testing.T) {
+	m := model{w: 120, h: 40, preview: true, full: true}
+	if lw, dw, _ := m.layout(); lw != 0 || dw != 120 {
+		t.Fatalf("full detail layout = %d, %d", lw, dw)
+	}
+	m.full = false
+	if lw, dw, _ := m.layout(); lw == 0 || dw == 0 {
+		t.Fatalf("split layout = %d, %d", lw, dw)
+	}
+}

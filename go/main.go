@@ -70,6 +70,7 @@ type model struct {
 	top        *int
 	w, h       int
 	preview    bool
+	full       bool // the detail pane fills the screen (V)
 	help       bool
 	busy       map[string]bool
 	msg        string
@@ -120,6 +121,9 @@ type model struct {
 func (m model) layout() (lw, dw, bodyH int) {
 	bodyH = max(3, m.h-5)
 	lw = m.w
+	if m.full {
+		return 0, m.w, bodyH
+	}
 	if m.preview && m.w >= 90 {
 		pct := m.split
 		if pct == 0 {
@@ -248,7 +252,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		lw, dw, _ := m.layout()
 		switch {
-		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
+		case !m.full && dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
 			m.dragging = true // grab the divider
 		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.X >= lw+2 && msg.Y >= 2:
 			return m, m.clickDetail(msg.X-lw-2, msg.Y-2, dw-4) // the body starts at Y=2, under the title and search rows
@@ -968,7 +972,13 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "K", "shift+up":
 			m.dscroll = max(0, m.dscroll-3)
 		case "v":
-			m.preview = !m.preview
+			if m.full {
+				m.full = false // back to the split
+			} else {
+				m.preview = !m.preview
+			}
+		case "V":
+			m.full = !m.full
 		case "?":
 			m.help = !m.help
 		case "r":
@@ -1079,6 +1089,9 @@ func (m model) View() string {
 			Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(divColor(m.dragging)).
 			Render(m.detail(dw-4, bodyH))
 		body = lipgloss.JoinHorizontal(lipgloss.Top, list, det)
+		if lw == 0 {
+			body = det // V: the detail pane alone
+		}
 	}
 
 	// bar
