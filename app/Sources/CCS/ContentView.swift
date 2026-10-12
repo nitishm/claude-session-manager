@@ -28,6 +28,8 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
+            sidebarHeader
+            Divider()
             if store.hits != nil {
                 HStack {
                     Image(systemName: store.hitKind == "deep" ? "doc.text.magnifyingglass" : "sparkles")
@@ -53,6 +55,37 @@ struct ContentView: View {
                 return .handled
             }
         }
+    }
+
+    private var sidebarHeader: some View {
+        HStack(spacing: 8) {
+            Text("Sessions").font(.system(.title3, design: .rounded).weight(.bold))
+            Text("\(store.rows.count)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                .padding(.horizontal, 7).padding(.vertical, 1).background(Color.primary.opacity(0.08), in: Capsule())
+            Spacer(minLength: 4)
+            filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
+            filterChip("Stale", nil, $store.staleOnly, .orange, "chip:stale")
+            filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
+            Menu {
+                Picker("Sort", selection: $store.sort) { ForEach(Store.sorts, id: \.self) { Text($0.capitalized).tag($0) } }
+                Toggle("Reverse", isOn: $store.reverse)
+            } label: { Label(store.sort.capitalized + (store.reverse ? " ↑" : ""), systemImage: "arrow.up.arrow.down").font(.caption) }
+                .menuStyle(.borderlessButton).fixedSize()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8).background(.bar)
+    }
+
+    private func filterChip(_ title: String, _ n: Int?, _ on: Binding<Bool>, _ color: Color, _ key: String) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                if let n, n > 0 { Text("\(n)").monospacedDigit() }
+            }
+            .font(.caption.weight(.medium)).foregroundStyle(on.wrappedValue ? Color.white : color)
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(on.wrappedValue ? color : color.opacity(store.hover == key ? 0.25 : 0.13), in: Capsule())
+        }
+        .buttonStyle(.plain).onHover { store.setHover(key, $0) }.clickable()
     }
 
     private var empty: some View {

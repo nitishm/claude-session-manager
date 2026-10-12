@@ -75,10 +75,11 @@ struct DetailView: View {
     let session: Session
 
     var body: some View {
+        VStack(spacing: 0) {
+        header
+        Divider()
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                header
-                actions
                 if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r) }
                 if !session.stub { AskView(store: store, session: session) }
                 if brief != nil, store.briefStale { staleBanner }
@@ -97,6 +98,7 @@ struct DetailView: View {
             }
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
         }
         .task(id: session.id) {
             await store.loadResume(session.id)
@@ -125,25 +127,24 @@ struct DetailView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(session.displayLabel).font(.system(.title, design: .rounded).weight(.bold)).textSelection(.enabled)
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(session.displayLabel).font(.system(.title2, design: .rounded).weight(.bold)).lineLimit(2).textSelection(.enabled)
+                statusPill
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 6) {
                 Button { store.reveal(URL(fileURLWithPath: session.cwd)) } label: {
-                    Label(session.dir, systemImage: "folder").foregroundStyle(session.dirGone ? Color.red : (store.hover == "dir" ? Color.accentColor : Color.secondary))
+                    chip("folder", session.dir, session.dirGone ? .red : (store.hover == "dir" ? Color.accentColor : .secondary))
                 }
                 .buttonStyle(.plain).onHover { store.setHover("dir", $0) }.disabled(session.dirGone).clickable(enabled: !session.dirGone).help("Reveal in Finder")
-                if !session.repo.isEmpty { Label(session.repo, systemImage: "arrow.triangle.branch") }
-                if let live = session.live { Label(live.status, systemImage: "circle.fill").foregroundStyle(.green) }
+                if !session.repo.isEmpty { chip("arrow.triangle.branch", session.repo, .secondary) }
+                chip("clock", "active \(ago(session.mtime)) ago", .secondary)
+                chip("text.bubble", "\(session.prompts) prompts", .secondary)
+                if session.forks > 0 { chip("arrow.triangle.branch", "\(session.forks) fork(s)", .secondary) }
+                if session.stale { chip("exclamationmark.triangle", "stale", .orange) }
             }
-            .font(.callout).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
-                Text("started \(session.started.formatted(date: .abbreviated, time: .shortened))")
-                Text("active \(ago(session.mtime)) ago")
-                Text("\(session.prompts) prompts")
-                if session.forks > 0 { Text("\(session.forks) fork(s)") }
-                if session.stale { Text("stale").foregroundStyle(.orange) }
-            }
-            .font(.caption).foregroundStyle(.secondary)
+            .help("started \(session.started.formatted(date: .abbreviated, time: .shortened))")
             if !session.pr.isEmpty, let url = URL(string: session.pr) { Link(session.pr, destination: url).font(.caption).clickable() }
             if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.caption).foregroundStyle(.red) }
             HStack {
@@ -156,7 +157,27 @@ struct DetailView: View {
                 }
                 Button(session.tags.isEmpty ? "Add tags" : "Edit tags") { store.editingTags = true; store.tagDraft = session.tags.joined(separator: " ") }.buttonStyle(.link).font(.caption).clickable("edittags")
             }
+            actions.padding(.top, 2)
         }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
+    }
+
+    @ViewBuilder private var statusPill: some View {
+        if let live = session.live {
+            let (text, color): (String, Color) = live.status == "busy" ? ("Working", .orange) : (live.status == "idle" ? ("Running", .green) : ("Needs you", .blue))
+            Label(text, systemImage: "circle.fill").font(.caption.weight(.semibold)).foregroundStyle(color)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(color.opacity(0.15), in: Capsule())
+        } else {
+            Text("Not running").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(Color.primary.opacity(0.07), in: Capsule())
+        }
+    }
+
+    private func chip(_ symbol: String, _ text: String, _ color: Color) -> some View {
+        Label(text, systemImage: symbol).font(.caption).foregroundStyle(color).lineLimit(1)
+            .padding(.horizontal, 8).padding(.vertical, 3).background(Color.primary.opacity(0.06), in: Capsule())
     }
 
     private var actions: some View {
@@ -188,7 +209,7 @@ struct DetailView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary).tracking(0.8)
             content().font(.body)
         }
     }
