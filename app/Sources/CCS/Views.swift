@@ -80,6 +80,7 @@ struct DetailView: View {
         Divider()
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.callout).foregroundStyle(.red) }
                 if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r) }
                 if !session.stub { AskView(store: store, session: session) }
                 if brief != nil, store.briefStale { staleBanner }
@@ -129,7 +130,7 @@ struct DetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(session.displayLabel).font(.system(.title2, design: .rounded).weight(.bold)).lineLimit(2).textSelection(.enabled)
+                Text(session.displayLabel).font(Theme.heading(24)).lineLimit(2).textSelection(.enabled)
                 statusPill
                 Spacer(minLength: 0)
             }
@@ -143,25 +144,21 @@ struct DetailView: View {
                 chip("text.bubble", "\(session.prompts) prompts", .secondary)
                 if session.forks > 0 { chip("arrow.triangle.branch", "\(session.forks) fork(s)", .secondary) }
                 if session.stale { chip("exclamationmark.triangle", "stale", .orange) }
-            }
-            .help("started \(session.started.formatted(date: .abbreviated, time: .shortened))")
-            if !session.pr.isEmpty, let url = URL(string: session.pr) { Link(session.pr, destination: url).font(.caption).clickable() }
-            if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.caption).foregroundStyle(.red) }
-            HStack {
-                ForEach(session.tags, id: \.self) { t in
+                ForEach(session.tags.prefix(3), id: \.self) { t in
                     Button { store.tagFilter = t } label: {
-                        Text("#" + t).font(.caption.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 8).padding(.vertical, 2)
+                        Text("#" + t).font(.caption.weight(.medium)).foregroundStyle(Theme.tag(t)).padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Theme.tag(t).opacity(store.hover == "tag:" + t ? 0.28 : 0.14), in: Capsule())
                     }
                     .buttonStyle(.plain).onHover { store.setHover("tag:" + t, $0) }.clickable().help("Filter the list by #\(t)")
                 }
                 Button(session.tags.isEmpty ? "Add tags" : "Edit tags") { store.editingTags = true; store.tagDraft = session.tags.joined(separator: " ") }.buttonStyle(.link).font(.caption).clickable("edittags")
             }
+            .help("started \(session.started.formatted(date: .abbreviated, time: .shortened))")
             actions.padding(.top, 2)
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, minHeight: Theme.headerHeight, maxHeight: Theme.headerHeight, alignment: .leading)
+        .background(Theme.headerBG, ignoresSafeAreaEdges: .top)
     }
 
     @ViewBuilder private var statusPill: some View {

@@ -10,6 +10,7 @@ struct ContentView: View {
         }
         .searchable(text: $store.query, placement: .toolbar, prompt: "Search title, dir, tags, prompts")
         .toolbar { toolbar }
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .safeAreaInset(edge: .bottom) { statusBar }
         .sheet(isPresented: $store.editingTags) {
             if let s = store.single { TagEditor(store: store, session: s) }
@@ -48,6 +49,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.inset)
+            .scrollContentBackground(.hidden)
             .overlay { if store.rows.isEmpty, store.conn == .ok { empty } }
             .onKeyPress(.return) {
                 guard !store.selection.isEmpty else { return .ignored }
@@ -55,24 +57,32 @@ struct ContentView: View {
                 return .handled
             }
         }
+        .background(Theme.sidebarBG)
     }
 
     private var sidebarHeader: some View {
-        HStack(spacing: 8) {
-            Text("Sessions").font(.system(.title3, design: .rounded).weight(.bold))
-            Text("\(store.rows.count)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
-                .padding(.horizontal, 7).padding(.vertical, 1).background(Color.primary.opacity(0.08), in: Capsule())
-            Spacer(minLength: 4)
-            filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
-            filterChip("Stale", nil, $store.staleOnly, .orange, "chip:stale")
-            filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
-            Menu {
-                Picker("Sort", selection: $store.sort) { ForEach(Store.sorts, id: \.self) { Text($0.capitalized).tag($0) } }
-                Toggle("Reverse", isOn: $store.reverse)
-            } label: { Label(store.sort.capitalized + (store.reverse ? " ↑" : ""), systemImage: "arrow.up.arrow.down").font(.caption) }
-                .menuStyle(.borderlessButton).fixedSize()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("Sessions").font(Theme.heading(26))
+                Text("\(store.rows.count)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                    .padding(.horizontal, 7).padding(.vertical, 1).background(Color.primary.opacity(0.08), in: Capsule())
+                Spacer(minLength: 4)
+                Menu {
+                    Picker("Sort", selection: $store.sort) { ForEach(Store.sorts, id: \.self) { Text($0.capitalized).tag($0) } }
+                    Toggle("Reverse", isOn: $store.reverse)
+                } label: { Label(store.sort.capitalized + (store.reverse ? " ↑" : ""), systemImage: "arrow.up.arrow.down").font(.caption) }
+                    .menuStyle(.borderlessButton).fixedSize()
+            }
+            HStack(spacing: 6) {
+                filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
+                filterChip("Stale", nil, $store.staleOnly, .orange, "chip:stale")
+                filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
+                Spacer(minLength: 0)
+            }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8).background(.bar)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: Theme.headerHeight, maxHeight: Theme.headerHeight, alignment: .leading)
+        .background(Theme.headerBG)
     }
 
     private func filterChip(_ title: String, _ n: Int?, _ on: Binding<Bool>, _ color: Color, _ key: String) -> some View {
@@ -81,9 +91,9 @@ struct ContentView: View {
                 Text(title)
                 if let n, n > 0 { Text("\(n)").monospacedDigit() }
             }
-            .font(.caption.weight(.medium)).foregroundStyle(on.wrappedValue ? Color.white : color)
+            .font(.caption.weight(.semibold)).foregroundStyle(on.wrappedValue ? Color.white : color.mix(with: .primary, by: 0.35))
             .padding(.horizontal, 9).padding(.vertical, 3)
-            .background(on.wrappedValue ? color : color.opacity(store.hover == key ? 0.25 : 0.13), in: Capsule())
+            .background(on.wrappedValue ? color : color.opacity(store.hover == key ? 0.34 : 0.22), in: Capsule())
         }
         .buttonStyle(.plain).onHover { store.setHover(key, $0) }.clickable()
     }
@@ -120,7 +130,22 @@ struct ContentView: View {
 
     // MARK: detail
 
-    @ViewBuilder private var detail: some View {
+    private var detail: some View {
+        Group {
+            if store.single != nil {
+                detailBody
+            } else {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: Theme.headerHeight).background(Theme.headerBG, ignoresSafeAreaEdges: .top)
+                    Divider()
+                    detailBody.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).background(Theme.detailBG, ignoresSafeAreaEdges: .all)
+    }
+
+    @ViewBuilder private var detailBody: some View {
         if let s = store.single {
             DetailView(store: store, session: s)
         } else if store.selection.count > 1 {

@@ -5,6 +5,26 @@ import SwiftUI
 enum Theme {
     static let violet = Color(red: 0.486, green: 0.227, blue: 0.929) // same hue as the TUI title bar
 
+    /// Heading face: Avenir Next Heavy, distinct from the system body UI.
+    static func heading(_ size: CGFloat) -> Font { .custom("AvenirNext-Heavy", size: size) }
+    static let slate = Color(red: 0.36, green: 0.46, blue: 0.60)
+    static let headerHeight: CGFloat = 118
+
+    /// Adaptive colour: one value for light mode, one for dark.
+    static func dyn(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat)) -> Color {
+        Color(nsColor: NSColor(name: nil) { a in
+            let d = a.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let c = d ? dark : light
+            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
+    }
+    /// Sidebar: deep slate in dark mode, cool grey-blue wash in light.
+    static let sidebarBG = dyn(light: (0.905, 0.920, 0.945), dark: (0.105, 0.130, 0.175))
+    /// Detail: near-black blue-grey in dark mode, pale tint in light.
+    static let detailBG = dyn(light: (0.965, 0.972, 0.982), dark: (0.070, 0.088, 0.120))
+    /// Header band: slate fading out to the right.
+    static let headerBG = LinearGradient(colors: [slate.opacity(0.34), slate.opacity(0.08)], startPoint: .leading, endPoint: .trailing)
+
     static func kind(_ k: String?) -> (symbol: String, color: Color, label: String) {
         switch k {
         case "research": return ("magnifyingglass", .cyan, "Research")
