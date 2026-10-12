@@ -239,6 +239,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
 			m.dragging = true // grab the divider
+		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.X >= lw+2 && msg.Y >= 3:
+			return m, m.clickDetail(msg.X-lw-2, msg.Y-3, dw-4)
 		case m.dragging && msg.Action == tea.MouseActionMotion:
 			m.split = min(max(msg.X*100/max(m.w, 1), 20), 85)
 		case m.dragging && msg.Action == tea.MouseActionRelease:
@@ -1111,9 +1113,27 @@ func span(s *session) string {
 }
 
 func (m model) detail(w, h int) string {
+	lines := m.detailLines(w)
+	if lines == nil {
+		return sDim.Render("no match")
+	}
+	scroll := min(m.dscroll, max(0, len(lines)-h))
+	end := min(len(lines), scroll+h)
+	view := append([]string(nil), lines[scroll:end]...)
+	if scroll > 0 {
+		view[0] = sDim.Render("▲ more above (K)")
+	}
+	if end < len(lines) {
+		view[len(view)-1] = sDim.Render("▼ more below (J)")
+	}
+	return strings.Join(view, "\n")
+}
+
+// detailLines is the whole detail pane, wrapped to w columns. Rendering and click handling both use it.
+func (m model) detailLines(w int) []string {
 	s := m.selected()
 	if s == nil {
-		return sDim.Render("no match")
+		return nil
 	}
 	sec := func(name string) string { return "\n" + sHead.Render(name) + "\n" }
 	var b strings.Builder
@@ -1152,17 +1172,7 @@ func (m model) detail(w, h int) string {
 	b.WriteString(sec("BRIEF") + m.briefSection(s, w-1) + "\n")
 	b.WriteString(sDim.Render("claude --resume " + s.ID))
 
-	lines := strings.Split(lipgloss.NewStyle().Width(w).Render(b.String()), "\n")
-	scroll := min(m.dscroll, max(0, len(lines)-h))
-	end := min(len(lines), scroll+h)
-	view := append([]string(nil), lines[scroll:end]...)
-	if scroll > 0 {
-		view[0] = sDim.Render("▲ more above (K)")
-	}
-	if end < len(lines) {
-		view[len(view)-1] = sDim.Render("▼ more below (J)")
-	}
-	return strings.Join(view, "\n")
+	return strings.Split(lipgloss.NewStyle().Width(w).Render(b.String()), "\n")
 }
 
 func main() {

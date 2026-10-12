@@ -128,6 +128,7 @@ func helpPopup(w, h int) string {
 		sec("FILTER · VIEW"),
 		k("p", "pin · o sort · d dir"),
 		k("w", "open the session's PR in the browser"),
+		k("click", "a URL or file in the detail pane opens it (files in Zed)"),
 		k("< >", "resize the list/detail split (or drag the divider)"),
 		k("l", "running only"),
 		k("b", "before reboot"),
