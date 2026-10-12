@@ -462,13 +462,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "q", "S", "enter":
 				m.briefOn = false
 			case "j", "down":
-				m.briefScroll++
+				m.briefScroll = min(m.briefScroll+1, m.briefMaxScroll())
 			case "k", "up":
-				m.briefScroll = max(0, m.briefScroll-1)
+				m.briefScroll = max(0, min(m.briefScroll, m.briefMaxScroll())-1)
 			case "pgdown", " ":
-				m.briefScroll += 8
+				m.briefScroll = min(m.briefScroll+8, m.briefMaxScroll())
 			case "pgup":
-				m.briefScroll = max(0, m.briefScroll-8)
+				m.briefScroll = max(0, min(m.briefScroll, m.briefMaxScroll())-8)
+			case "g", "home":
+				m.briefScroll = 0
+			case "G", "end":
+				m.briefScroll = m.briefMaxScroll()
 			case "r":
 				if s := m.selected(); s != nil && !m.briefBusy {
 					m.brief, m.briefBusy, m.briefScroll = "", true, 0

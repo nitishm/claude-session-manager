@@ -146,8 +146,10 @@ func ago(_ d: Date, now: Date = Date()) -> String {
 
 /// The structured brief ccsd returns in `data`. Null when the cached brief predates the format.
 struct BriefData: Codable, Hashable {
-    struct Step: Codable, Hashable { let text: String; let state: String }
-    struct Event: Codable, Hashable { let when: String; let text: String }
+    /// A real prompt and the assistant's closing reply from the transcript, not model-written.
+    struct Exchange: Codable, Hashable { let n: Int; let when: String; let user: String; let reply: String }
+    struct Step: Codable, Hashable { let text: String; let state: String; let preview: Exchange? }
+    struct Event: Codable, Hashable { let when: String; let text: String; let preview: Exchange? }
     let goal: String
     let status: String
     let statusNote: String

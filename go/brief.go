@@ -39,6 +39,30 @@ func briefLines(text string, w int) []string {
 	return out
 }
 
+// quote renders a dim, indented excerpt of a real message, cut to maxLines with an ellipsis.
+func quote(pad, who, text string, width, maxLines int) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	lines := strings.Split(lipgloss.NewStyle().Width(max(10, width-len(who)-3)).Render(text), "\n")
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		lines[maxLines-1] = strings.TrimRight(lines[maxLines-1], " ") + "…"
+	}
+	var out []string
+	for i, l := range lines {
+		lead := strings.Repeat(" ", len(who)+3)
+		if i == 0 {
+			lead = sAcc.Render(who) + sDim.Render(" ❝ ")
+			if who == "claude" {
+				lead = sGood.Render(who) + sDim.Render(" ❝ ")
+			}
+		}
+		out = append(out, pad+lead+sDim.Render(strings.TrimRight(l, " ")))
+	}
+	return out
+}
+
 // briefVisual draws a structured brief: header card, kanban columns, timeline. w is the content width.
 func briefVisual(b *engine.BriefData, w int) []string {
 	wrap := func(txt string, width int) []string {
@@ -159,6 +183,11 @@ func briefVisual(b *engine.BriefData, w int) []string {
 					out = append(out, sDim.Render("│  ")+strings.Repeat(" ", whenW+1)+l)
 				}
 			}
+			if ev.Preview != nil {
+				pad := sDim.Render("│  ") + strings.Repeat(" ", whenW+1)
+				out = append(out, quote(pad, "you", ev.Preview.User, w-whenW-5, 2)...)
+				out = append(out, quote(pad, "claude", ev.Preview.Reply, w-whenW-5, 2)...)
+			}
 			if last && b.Status != "done" {
 				out = append(out, sDim.Render("│  ")+strings.Repeat(" ", whenW+1)+sLink.Underline(false).Render("← you are here"))
 			}
@@ -181,29 +210,39 @@ func briefVisual(b *engine.BriefData, w int) []string {
 	return out
 }
 
+func (m model) briefWidth() int { return min(m.w-8, 92) }
+func (m model) briefVis() int   { return max(3, m.h-10) }
+
+// briefBody is the popup's scrollable content. The key handler and the renderer both use it,
+// so the scroll position can be clamped to the real last line.
+func (m model) briefBody() []string {
+	w := m.briefWidth()
+	switch {
+	case m.briefBusy && m.brief == "":
+		return []string{sDim.Render("asking claude… (5-15s)")}
+	case m.brief == "":
+		return []string{sDim.Render("no brief yet")}
+	}
+	if b, ok := engine.ParseBrief(m.brief); ok {
+		return briefVisual(b, w-4)
+	}
+	return briefLines(m.brief, w) // a brief cached before the structured format; r regenerates
+}
+
+// briefMaxScroll is the largest scroll offset that still fills the window.
+func (m model) briefMaxScroll() int { return max(0, len(m.briefBody())-m.briefVis()) }
+
 func (m model) briefPopup() string {
-	w := min(m.w-8, 92)
+	w := m.briefWidth()
 	title := "Brief"
 	if s := m.selected(); s != nil {
 		title += " · " + engine.Clean(s.Label(), w-10)
 	}
-	var body []string
-	switch {
-	case m.briefBusy && m.brief == "":
-		body = []string{sDim.Render("asking claude… (5-15s)")}
-	case m.brief == "":
-		body = []string{sDim.Render("no brief yet")}
-	default:
-		if b, ok := engine.ParseBrief(m.brief); ok {
-			body = briefVisual(b, w-4)
-		} else {
-			body = briefLines(m.brief, w) // a brief cached before the structured format; r regenerates
-		}
-	}
-	vis := max(3, m.h-10)
-	sc := max(0, min(m.briefScroll, max(0, len(body)-vis)))
+	body := m.briefBody()
+	vis := m.briefVis()
+	sc := max(0, min(m.briefScroll, m.briefMaxScroll()))
 	end := min(len(body), sc+vis)
-	foot := "j/k scroll · r regenerate · Esc closes"
+	foot := "j/k scroll · g/G top/bottom · r regenerate · Esc closes"
 	if len(body) > vis {
 		foot = fmt.Sprintf("%d-%d of %d · ", sc+1, end, len(body)) + foot
 	}

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -19,6 +22,10 @@ var sample = &engine.BriefData{
 	Timeline: []engine.BriefEvent{{When: "Oct 01", Text: "Suites fail in dev"}, {When: "Oct 02", Text: "Reproduced, found bad fixture in dev.yaml"},
 		{When: "Oct 11", Text: "Re-running the dev suite after the client patch"}},
 	Files: []string{"suites/client.go", "fixtures/dev.yaml", "Makefile"},
+}
+
+func init() {
+	sample.Timeline[1].Preview = &engine.Exchange{N: 2, When: "Oct 02", User: "the dev suite fails on login, can you find out why", Reply: "Found it: fixtures/dev.yaml has a stale token, patched and re-ran, 3 of 4 pass now."}
 }
 
 func TestBriefVisualWidths(t *testing.T) {
@@ -48,5 +55,39 @@ func TestBriefVisualMinimal(t *testing.T) {
 	b := &engine.BriefData{Goal: "g", Status: "done", Timeline: []engine.BriefEvent{{When: "Oct 01", Text: "did it"}}}
 	if len(briefVisual(b, 60)) == 0 {
 		t.Fatal("empty")
+	}
+}
+
+func TestBriefScrollStopsAtFloor(t *testing.T) {
+	j, _ := json.Marshal(sample)
+	m := newModel(nil)
+	m.w, m.h = 100, 24
+	m.briefOn, m.brief = true, string(j)
+	max := m.briefMaxScroll()
+	if max < 5 {
+		t.Fatalf("test needs a brief taller than the window, max=%d", max)
+	}
+	press := func(k tea.KeyMsg) {
+		nm, _ := m.Update(k)
+		m = nm.(model)
+	}
+	for i := 0; i < 200; i++ {
+		press(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.briefScroll != max {
+		t.Fatalf("after 200 downs scroll=%d, want the floor %d", m.briefScroll, max)
+	}
+	press(tea.KeyMsg{Type: tea.KeyUp})
+	if m.briefScroll != max-1 {
+		t.Errorf("one up from the bottom should move one line, got %d", m.briefScroll)
+	}
+	press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	press(tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.briefScroll != max {
+		t.Errorf("pgdown past the end: %d, want %d", m.briefScroll, max)
+	}
+	press(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	if m.briefScroll != 0 {
+		t.Errorf("g should go to the top, got %d", m.briefScroll)
 	}
 }

@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// A structured brief: header card, kanban columns, timeline. Everything on it is clickable:
-/// files open or reveal, steps and events copy, Next resumes, sections collapse.
+/// A structured brief: header card, kanban columns, timeline. Files open or reveal, Next resumes,
+/// steps and events expand to the real conversation behind them, sections collapse.
 /// State lives in the Store because @State needs Xcode's macro plugin.
 struct BriefView: View {
     @Bindable var store: Store
@@ -94,15 +94,13 @@ struct BriefView: View {
                         HStack(spacing: 8) {
                             Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume", systemImage: "play.fill") }
                                 .controlSize(.small).disabled(!canResume).help("Resume this session in your terminal")
-                            Button { store.copy(data.next, note: "copied next step") } label: { Label("Copy", systemImage: "doc.on.doc") }
-                                .controlSize(.small).help("Copy the next step, to paste as your first prompt")
                         }
                     }
                 }
             }
             if !data.files.isEmpty {
                 row("Files") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
+                    FlowLayout(spacing: 6) {
                         ForEach(data.files, id: \.self) { f in file(f) }
                     }
                 }
@@ -113,25 +111,38 @@ struct BriefView: View {
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    /// A file the brief saw. Real files open on click; ones that no longer exist are shown dimmed.
     @ViewBuilder private func file(_ f: String) -> some View {
         let url = store.resolve(f, cwd: session.cwd)
-        pill(url == nil ? "doc.on.doc" : "doc.text", f, key: "file:" + f) { store.openFile(f, cwd: session.cwd) }
-            .help(url == nil ? "Not a file on disk. Click to copy" : "Open \(url!.path)")
-            .contextMenu {
-                if let url {
-                    Button("Open") { NSWorkspace.shared.open(url) }
-                    Button("Reveal in Finder") { store.reveal(url) }
-                    Button("Copy path") { store.copy(url.path, note: "copied path") }
-                } else {
-                    Button("Copy") { store.copy(f) }
-                }
+        let key = "file:" + f
+        Button { if let url { NSWorkspace.shared.open(url) } } label: {
+            Label {
+                Text(f).lineLimit(1).truncationMode(.middle)
+            } icon: {
+                Image(systemName: url == nil ? "doc.badge.ellipsis" : "doc.text")
             }
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(url == nil ? Color.secondary.opacity(0.6) : (hovered(key) ? Color.accentColor : Color.primary))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .frame(maxWidth: 300, alignment: .leading)
+            .background(hovered(key) && url != nil ? Color.accentColor.opacity(0.18) : Color.clear, in: Capsule())
+            .background(.quaternary, in: Capsule())
+        }
+        .buttonStyle(.plain).disabled(url == nil).onHover { store.setHover(key, $0) }
+        .help(url.map { "Open " + $0.path } ?? "Not found under \(session.dir)")
+        .contextMenu {
+            if let url {
+                Button("Open") { NSWorkspace.shared.open(url) }
+                Button("Reveal in Finder") { store.reveal(url) }
+            }
+        }
     }
 
     private func row<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(label.uppercased()).font(.caption2.bold()).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
+        HStack(alignment: .top, spacing: 10) {
+            Text(label.uppercased()).font(.caption2.bold()).foregroundStyle(.secondary).frame(width: 44, alignment: .leading).padding(.top, 3)
             content()
+            Spacer(minLength: 0)
         }
     }
 
@@ -154,26 +165,36 @@ struct BriefView: View {
                 Text("\(items.count)").font(.caption).foregroundStyle(.secondary)
             }
             if items.isEmpty { Text("—").foregroundStyle(.tertiary) }
-            ForEach(items, id: \.self) { s in
-                let key = "step:" + s.text
-                Button { store.copy(s.text, note: "copied step") } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: icon).foregroundStyle(color).font(.caption)
-                        Text(s.text).font(.callout).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(hovered(key) ? color.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain).onHover { store.setHover(key, $0) }.help("Click to copy")
-                .contextMenu { Button("Copy") { store.copy(s.text, note: "copied step") } }
-            }
+            ForEach(items, id: \.self) { s in stepCard(s, icon: icon, color: color) }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(color.opacity(0.35)))
+    }
+
+    @ViewBuilder private func stepCard(_ s: BriefData.Step, icon: String, color: Color) -> some View {
+        let key = "step:" + s.text
+        let open = store.expanded.contains(key)
+        VStack(alignment: .leading, spacing: 6) {
+            Button { if s.preview != nil { withAnimation(.easeInOut(duration: 0.15)) { store.toggleExpanded(key) } } } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: icon).foregroundStyle(color).font(.caption)
+                    Text(s.text).font(.callout).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if s.preview != nil {
+                        Image(systemName: "bubble.left.and.text.bubble.right").font(.caption2).foregroundStyle(open ? Color.accentColor : Color.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).onHover { store.setHover(key, $0) }
+            .help(s.preview == nil ? "" : (open ? "Hide the conversation" : "Show where this was discussed"))
+            if open, let p = s.preview { PreviewBlock(ex: p, expanded: true) }
+        }
+        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovered(key) && s.preview != nil ? color.opacity(0.2) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(.background, in: RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: 3. timeline
@@ -203,13 +224,15 @@ struct BriefView: View {
                     .foregroundStyle(here ? statusColor : Color.green).frame(width: 14)
                 if showLine { Rectangle().fill(.quaternary).frame(width: 2).frame(maxHeight: .infinity) }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Button { store.copy(ev.text, note: "copied event") } label: {
-                    Text(ev.text).multilineTextAlignment(.leading)
-                        .foregroundStyle(hovered(key) ? Color.accentColor : Color.primary)
-                        .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 6) {
+                Text(ev.text).textSelection(.enabled)
+                if let p = ev.preview {
+                    Button { withAnimation(.easeInOut(duration: 0.15)) { store.toggleExpanded(key) } } label: {
+                        PreviewBlock(ex: p, expanded: store.expanded.contains(key)).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).onHover { store.setHover(key, $0) }
+                    .opacity(hovered(key) ? 1 : 0.85).help(store.expanded.contains(key) ? "Show less" : "Show the full exchange")
                 }
-                .buttonStyle(.plain).onHover { store.setHover(key, $0) }.help("Click to copy")
                 if here {
                     HStack(spacing: 8) {
                         Text("you are here").font(.caption).foregroundStyle(statusColor)
@@ -220,6 +243,60 @@ struct BriefView: View {
             }
             .padding(.bottom, 12)
             Spacer(minLength: 0)
+        }
+    }
+}
+
+/// A real exchange from the transcript: what you asked and how it ended. Clipped until expanded.
+struct PreviewBlock: View {
+    let ex: BriefData.Exchange
+    let expanded: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1).fill(Color.accentColor.opacity(0.5)).frame(width: 2)
+            VStack(alignment: .leading, spacing: 4) {
+                line("you", ex.user, .accentColor)
+                if !ex.reply.isEmpty { line("claude", ex.reply, .green) }
+                if !expanded { Text("click to expand").font(.caption2).foregroundStyle(.tertiary) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func line(_ who: String, _ text: String, _ color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(who).font(.caption2.bold()).foregroundStyle(color).frame(width: 40, alignment: .leading)
+            Text(text).font(.callout).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2).multilineTextAlignment(.leading)
+        }
+    }
+}
+
+/// Wraps its children onto rows, each at its natural width.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, widest: CGFloat = 0
+        for s in subviews {
+            let sz = s.sizeThatFits(.unspecified)
+            if x > 0, x + sz.width > width { x = 0; y += rowH + spacing; rowH = 0 }
+            x += sz.width + spacing
+            rowH = max(rowH, sz.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, width), height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for s in subviews {
+            let sz = s.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + sz.width > bounds.maxX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
+            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
+            x += sz.width + spacing
+            rowH = max(rowH, sz.height)
         }
     }
 }

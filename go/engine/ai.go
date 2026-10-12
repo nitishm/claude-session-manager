@@ -273,22 +273,23 @@ func (e *Engine) BriefCached(s *Session) (string, bool) {
 	return t, ok
 }
 
-// stamp turns an RFC3339 timestamp into a "[Oct 02] " tag for the digest.
-func stamp(ts string) string {
+// day turns an RFC3339 timestamp into a short local date such as "Oct 02".
+func day(ts string) string {
 	if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-		return "[" + t.Local().Format("Jan 02") + "] "
+		return t.Local().Format("Jan 02")
 	}
 	return ""
 }
 
-// digest reads the transcript and keeps what a reader needs to tell what the session was about.
-func digest(path string) string {
+// readExchanges walks the transcript and pairs every real user prompt with the last assistant
+// text before the next prompt. N is 1-based, in order, and is what the model cites as a ref.
+func readExchanges(path string) []Exchange {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer f.Close()
-	var users, asst []string
+	var ex []Exchange
 	rd := bufio.NewReaderSize(f, 64<<10)
 	for {
 		line, err := rd.ReadBytes('\n')
@@ -298,11 +299,11 @@ func digest(path string) string {
 				switch d.Type {
 				case "user":
 					if t := unwrapCmd(textOf(d.Message.Content)); t != "" && !hasNoise(t) {
-						users = append(users, stamp(d.Timestamp)+Clean(t, 320))
+						ex = append(ex, Exchange{N: len(ex) + 1, When: day(d.Timestamp), User: Clean(t, 500)})
 					}
 				case "assistant":
-					if t := textOf(d.Message.Content); len(t) > 40 {
-						asst = append(asst, Clean(t, 420))
+					if t := textOf(d.Message.Content); len(t) > 40 && len(ex) > 0 {
+						ex[len(ex)-1].Reply = Clean(t, 500)
 					}
 				}
 			}
@@ -311,15 +312,27 @@ func digest(path string) string {
 			break
 		}
 	}
+	return ex
+}
+
+// digest renders the exchanges for the model: numbered prompts, then the closing assistant replies.
+func digest(ex []Exchange) string {
 	pick := func(xs []string, first, last int) []string {
 		if len(xs) <= first+last {
 			return xs
 		}
 		return append(append([]string{}, xs[:first]...), append([]string{"[…]"}, xs[len(xs)-last:]...)...)
 	}
+	var users, asst []string
+	for _, x := range ex {
+		users = append(users, fmt.Sprintf("#%d [%s] %s", x.N, x.When, Clean(x.User, 320)))
+		if x.Reply != "" {
+			asst = append(asst, fmt.Sprintf("(reply to #%d) %s", x.N, Clean(x.Reply, 420)))
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "User prompts (%d total, oldest first):\n- %s\n", len(users), strings.Join(pick(users, 6, 14), "\n- "))
-	fmt.Fprintf(&b, "\nAssistant messages (%d total, last ones):\n- %s\n", len(asst), strings.Join(pick(asst, 2, 6), "\n- "))
+	fmt.Fprintf(&b, "\nAssistant replies (last ones):\n- %s\n", strings.Join(pick(asst, 2, 6), "\n- "))
 	out := b.String()
 	if len(out) > 14000 {
 		out = out[:14000]
@@ -334,12 +347,14 @@ Reply with ONLY one JSON object, no prose, no code fence, in exactly this shape:
  "status":"active|blocked|done|idle",
  "statusNote":"<where it stands now or what blocks it, max 14 words>",
  "next":"<the single next action, max 16 words>",
- "steps":[{"text":"<max 8 words>","state":"done|doing|todo"}],
- "timeline":[{"when":"<short date like Oct 02>","text":"<what happened, max 12 words>"}],
- "files":["<key file, command or name>"]}
+ "steps":[{"text":"<max 8 words>","state":"done|doing|todo","ref":<prompt number or 0>}],
+ "timeline":[{"when":"<short date like Oct 02>","text":"<what happened, max 12 words>","ref":<prompt number or 0>}],
+ "files":["<real file path>"]}
 steps: 4 to 8 items in order, covering finished, current (at most one "doing") and remaining work.
 timeline: 3 to 6 milestones, oldest first, using the [date] tags on the prompts. The last one is the latest state.
-files: up to 6. Be specific (names, paths, numbers). No filler.
+ref: the number N from "#N" of the user prompt that best shows where that step or milestone was discussed. 0 if none fits. Never invent numbers.
+files: up to 6 real file paths seen in the session (like ~/.aerospace.toml or src/main.go). Never descriptions or commands. [] if none.
+Be specific (names, paths, numbers). No filler.
 
 `
 
@@ -352,14 +367,19 @@ func (e *Engine) Brief(s *Session) (string, error) {
 	if s.PR != "" {
 		ctx += "PR: " + s.PR + "\n"
 	}
-	ctx += "\n" + digest(s.Path)
+	ex := readExchanges(s.Path)
+	ctx += "\n" + digest(ex)
 	out, err := runClaude(briefPrompt+ctx, 90*time.Second)
 	txt := strings.TrimSpace(ctrlRe.ReplaceAllString(out, ""))
 	if err == nil {
-		if b, ok := ParseBrief(txt); !ok {
+		b, ok := ParseBrief(txt)
+		if !ok {
 			err = fmt.Errorf("unreadable reply")
-		} else if j, merr := json.Marshal(b); merr == nil {
-			txt = string(j) // store the cleaned, bounded form
+		} else {
+			b.Attach(ex) // previews come from the real transcript, never from the model
+			if j, merr := json.Marshal(b); merr == nil {
+				txt = string(j) // store the cleaned, bounded form
+			}
 		}
 	}
 	if err == nil {

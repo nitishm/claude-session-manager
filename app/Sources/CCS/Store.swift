@@ -52,6 +52,7 @@ final class Store {
     // Interaction state for the brief. Kept here because @State is unavailable without Xcode.
     var hover: String?
     var collapsed = Set<String>()
+    var expanded = Set<String>() // brief items showing their full conversation preview
 
     func setHover(_ key: String, _ on: Bool) {
         if on { hover = key } else if hover == key { hover = nil }
@@ -59,6 +60,10 @@ final class Store {
 
     func toggle(_ section: String) {
         if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
+    }
+
+    func toggleExpanded(_ key: String) {
+        if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
     }
 
     func copy(_ text: String, note: String = "copied") {

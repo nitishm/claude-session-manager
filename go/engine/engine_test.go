@@ -348,3 +348,44 @@ func TestParseBrief(t *testing.T) {
 		}
 	}
 }
+
+func TestBriefAttachAndFiles(t *testing.T) {
+	ex := []Exchange{{N: 1, When: "Oct 01", User: "fix the thing", Reply: "done, patched x.go"}, {N: 2, When: "Oct 02", User: "ship", Reply: "shipped"}}
+	b, ok := ParseBrief(`{"goal":"g","steps":[{"text":"a","state":"done","ref":2},{"text":"b","state":"todo","ref":9}],
+	  "timeline":[{"when":"Oct 01","text":"t","ref":1,"preview":{"n":7,"user":"FORGED"}}],
+	  "files":["~/.aerospace.toml","src/main.go","Karabiner config JSON (hyper+c)","make suites ENV=dev","Makefile"]}`)
+	if !ok {
+		t.Fatal("not parsed")
+	}
+	b.Attach(ex)
+	if b.Steps[0].Preview == nil || b.Steps[0].Preview.User != "ship" {
+		t.Errorf("ref 2 not resolved: %+v", b.Steps[0].Preview)
+	}
+	if b.Steps[1].Preview != nil {
+		t.Errorf("unknown ref 9 got a preview")
+	}
+	if p := b.Timeline[0].Preview; p == nil || p.User != "fix the thing" {
+		t.Errorf("model-supplied preview not replaced: %+v", p)
+	}
+	if len(b.Files) != 3 || b.Files[0] != "~/.aerospace.toml" || b.Files[2] != "Makefile" {
+		t.Errorf("files = %v", b.Files)
+	}
+}
+
+func TestReadExchanges(t *testing.T) {
+	home := t.TempDir()
+	p := filepath.Join(home, "s.jsonl")
+	lines := `{"type":"user","timestamp":"2026-10-01T10:00:00Z","message":{"content":"first ask"}}
+{"type":"assistant","timestamp":"2026-10-01T10:00:05Z","message":{"content":[{"type":"text","text":"working on it, this is a long enough reply"}]}}
+{"type":"assistant","timestamp":"2026-10-01T10:00:09Z","message":{"content":[{"type":"text","text":"final answer: all done and verified here, thanks"}]}}
+{"type":"user","timestamp":"2026-10-02T10:00:00Z","message":{"content":"second ask"}}
+`
+	os.WriteFile(p, []byte(lines), 0o644)
+	ex := readExchanges(p)
+	if len(ex) != 2 || ex[0].N != 1 || ex[1].N != 2 {
+		t.Fatalf("ex = %+v", ex)
+	}
+	if ex[0].User != "first ask" || !strings.HasPrefix(ex[0].Reply, "final answer") || ex[1].Reply != "" {
+		t.Errorf("pairing wrong: %+v", ex)
+	}
+}
