@@ -4,3 +4,4 @@ __pycache__/
 *.pre2
 .DS_Store
 ccsd
+app/build/
