@@ -1,61 +1,72 @@
 import SwiftUI
 
-/// Everything that happened in a session, oldest first: prompts with their turn stats, commits, pushes, PRs,
-/// compactions and pauses. It shows the latest few and expands to all. No model call is involved.
+/// Everything that happened in a session, oldest first, in a fixed-height terminal-style window that scrolls.
+/// It opens at the newest event. No model call is involved.
 struct HistoryView: View {
     @Bindable var store: Store
     let events: [TLEvent]
     var embedded = false // inside the brief's Timeline fold, which already has a title
 
-    private static let recent = 12
-    private var all: Bool { store.collapsed.contains("history:all") }
-    private var shown: [TLEvent] { all || events.count <= Self.recent ? events : Array(events.suffix(Self.recent)) }
+    private static let bg = Color(red: 0.08, green: 0.09, blue: 0.11)
+    private static let fg = Color(red: 0.85, green: 0.87, blue: 0.9)
+    private static let dim = Color(red: 0.5, green: 0.53, blue: 0.58)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if !embedded {
-                    Text("History").font(.headline)
-                    Text("\(events.count) events").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if events.count > Self.recent {
-                    Button(all ? "Show latest" : "Show all \(events.count)") { store.toggle("history:all") }
-                        .buttonStyle(.link).font(.caption).clickable("history:toggle")
-                }
-            }
-            if !all, events.count > Self.recent {
-                Text("\(events.count - Self.recent) earlier events hidden").font(.caption).foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { i, e in
-                    if i == 0 || !Calendar.current.isDate(e.at, inSameDayAs: shown[i - 1].at) {
-                        Text(e.at.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)))
-                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                            .padding(.top, i == 0 ? 0 : 10).padding(.bottom, 4)
+        VStack(spacing: 0) {
+            chrome
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(events.enumerated()), id: \.element.id) { i, e in
+                            if i == 0 || !Calendar.current.isDate(e.at, inSameDayAs: events[i - 1].at) {
+                                Text("── " + e.at.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
+                                    .foregroundStyle(Self.dim).padding(.top, i == 0 ? 0 : 8).padding(.bottom, 2)
+                            }
+                            row(e).id(e.id)
+                        }
                     }
-                    row(e)
+                    .font(.system(size: 12, design: .monospaced))
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(height: 280)
+                .onAppear { if let last = events.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                .onChange(of: events.count) { _, _ in if let last = events.last { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
         }
+        .background(Self.bg)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.12)))
+        .environment(\.colorScheme, .dark)
+    }
+
+    private var chrome: some View {
+        HStack(spacing: 6) {
+            ForEach([Color.red, .yellow, .green], id: \.self) { Circle().fill($0.opacity(0.8)).frame(width: 10, height: 10) }
+            Spacer()
+            Text("timeline · \(events.count) events").font(.system(size: 11, design: .monospaced)).foregroundStyle(Self.dim)
+            Spacer()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.white.opacity(0.06))
     }
 
     private func row(_ e: TLEvent) -> some View {
         let (symbol, color) = Self.style(e.kind)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(e.at.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 62, alignment: .trailing)
+            Text(e.at.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())).foregroundStyle(Self.dim)
             Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(e.text).font(.callout).foregroundStyle(e.kind == "prompt" ? Color.primary : Color.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(e.text).foregroundStyle(e.kind == "prompt" ? Self.fg : Self.dim)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    if let n = e.n, e.kind == "prompt" { Text("#\(n)").font(.caption2).foregroundStyle(.tertiary) }
+                    if let n = e.n, e.kind == "prompt" { Text("#\(n)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Self.dim.opacity(0.7)) }
                 }
-                if let line = stats(e) { Text(line).font(.caption).foregroundStyle(.secondary) }
+                if let line = stats(e) { Text(line).font(.system(size: 11, design: .monospaced)).foregroundStyle(Self.dim) }
                 if let d = e.detail, !d.isEmpty { detail(e, d) }
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder private func detail(_ e: TLEvent, _ d: String) -> some View {

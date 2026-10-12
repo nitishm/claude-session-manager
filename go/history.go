@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
 	"ccsgo/engine"
 )
 
-const histRecent = 12
+const histRows = 10 // content rows in the timeline window
 
 var histGlyph = map[string]string{
 	engine.EvPrompt: "›", engine.EvCommit: "✓", engine.EvPush: "↑", engine.EvPR: "⇄", engine.EvCompact: "≈",
@@ -15,8 +18,8 @@ var histGlyph = map[string]string{
 	engine.EvGap: "…", engine.EvSchedule: "⏲", engine.EvArtifact: "▣", engine.EvAPIError: "!", engine.EvInterrupt: "✗",
 }
 
-// historySection is the detail pane's HISTORY block: every prompt, commit, push, PR, compaction and pause, newest last.
-// It shows the last few events and h reveals the rest.
+// historySection is the detail pane's TIMELINE window: a fixed-height, terminal-style box holding every prompt, commit,
+// push, PR, compaction and pause, newest at the bottom. The mouse wheel over the box scrolls it.
 func (m model) historySection(s *session, w int) string {
 	if s.Path == "" || s.Prompts == 0 {
 		return ""
@@ -25,25 +28,54 @@ func (m model) historySection(s *session, w int) string {
 	if len(ev) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString("\n" + sHead.Render(fmt.Sprintf("TIMELINE · %d events", len(ev))) + "\n")
-	shown := ev
-	if !m.histAll && len(ev) > histRecent {
-		shown = ev[len(ev)-histRecent:]
-		b.WriteString(sDim.Render(fmt.Sprintf("… %d earlier · h shows all", len(ev)-histRecent)) + "\n")
-	} else if m.histAll && len(ev) > histRecent {
-		b.WriteString(sDim.Render("h shows only the latest") + "\n")
-	}
+	inner := max(w-4, 10)
+	var rows []string
 	prevDay := ""
-	for _, e := range shown {
-		day := e.At.Format("Mon 02 Jan")
-		if day != prevDay {
-			b.WriteString(sDim.Render("── "+day) + "\n")
+	for _, e := range ev {
+		if day := e.At.Format("Mon 02 Jan"); day != prevDay {
+			rows = append(rows, sDim.Render("── "+day))
 			prevDay = day
 		}
-		b.WriteString(eventLine(e, w) + "\n")
+		rows = append(rows, eventLine(e, inner))
 	}
-	return strings.TrimRight(b.String(), "\n")
+	n := len(rows)
+	off := min(m.histOff, max(0, n-histRows))
+	end := n - off
+	start := max(0, end-histRows)
+	title := fmt.Sprintf(" timeline · %d events ", len(ev))
+	foot := fmt.Sprintf(" %d-%d of %d ", start+1, end, n)
+	if n > histRows {
+		foot += "· wheel scrolls "
+	}
+	edge := func(l, r, label string) string {
+		fill := max(0, w-2-lipgloss.Width(label)-1)
+		return sDim.Render(l+"─") + sAcc.Render(label) + sDim.Render(strings.Repeat("─", fill)+r)
+	}
+	var b strings.Builder
+	b.WriteString("\n" + edge("╭", "╮", title) + "\n")
+	for i := 0; i < histRows; i++ {
+		row := ""
+		if start+i < end {
+			row = ansi.Truncate(rows[start+i], inner, "…")
+		}
+		b.WriteString(sDim.Render("│ ") + row + strings.Repeat(" ", max(0, inner-lipgloss.Width(row))) + sDim.Render(" │") + "\n")
+	}
+	b.WriteString(edge("╰", "╯", foot))
+	return b.String()
+}
+
+// histBox finds the timeline window in rendered detail lines: the index of its top and bottom border, or -1.
+func histBox(lines []string) (top, bottom int) {
+	top, bottom = -1, -1
+	for i, l := range lines {
+		l = ansi.Strip(l)
+		if top < 0 && strings.HasPrefix(l, "╭─ timeline") {
+			top = i
+		} else if top >= 0 && strings.HasPrefix(l, "╰─") {
+			return top, i
+		}
+	}
+	return -1, -1
 }
 
 func eventLine(e engine.Event, w int) string {
@@ -96,4 +128,20 @@ func secsText(n int) string {
 		return fmt.Sprintf("%ds", n)
 	}
 	return engine.Duration(n / 60)
+}
+
+// wheelHistory scrolls the timeline window when the pointer is over it. up is +1 for older events.
+func (m *model) wheelHistory(x, y, w, up int) bool {
+	lines := m.detailLines(w)
+	top, bottom := histBox(lines)
+	if top < 0 {
+		return false
+	}
+	_, _, h := m.layout()
+	row := y - 2 + min(m.dscroll, max(0, len(lines)-h))
+	if row < top || row > bottom {
+		return false
+	}
+	m.histOff = max(0, m.histOff+up*3)
+	return true
 }
