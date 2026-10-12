@@ -43,12 +43,32 @@ func (e *Engine) workDir(s *Session) string {
 // Open starts sessions in Ghostty, iTerm2 or Terminal.app (by $TERM_PROGRAM). tab=false: one new
 // window (Ghostty: a tab per session inside it); tab=true: new tab(s) in the front window, which
 // is the one ccs is running in. fork=true resumes each as a named fork.
+// terminal names the terminal to open sessions in. TERM_PROGRAM wins (the TUI runs inside one);
+// a daemon started from Finder has none, so CCS_TERMINAL or whichever supported app is installed is used.
+func terminal() string {
+	if t := os.Getenv("CCS_TERMINAL"); t != "" {
+		return t
+	}
+	if t := os.Getenv("TERM_PROGRAM"); t != "" {
+		return t
+	}
+	for _, c := range [][2]string{{"ghostty", "Ghostty"}, {"iTerm.app", "iTerm"}, {"Apple_Terminal", "Utilities/Terminal"}} {
+		for _, dir := range []string{"/Applications/", "/System/Applications/"} {
+			if _, err := os.Stat(dir + c[1] + ".app"); err == nil {
+				return c[0]
+			}
+		}
+	}
+	return ""
+}
+
 func (e *Engine) Open(ss []*Session, tab, fork bool) (int, error) {
 	bin, err := exec.LookPath("claude")
 	if err != nil {
 		return 0, fmt.Errorf("claude not found")
 	}
-	if os.Getenv("TERM_PROGRAM") == "ghostty" {
+	term := terminal()
+	if term == "ghostty" {
 		return e.openGhostty(ss, bin, tab, fork)
 	}
 	var cmds []string
@@ -58,7 +78,7 @@ func (e *Engine) Open(ss []*Session, tab, fork bool) (int, error) {
 	n := 0
 	for i := range ss {
 		var err error
-		switch os.Getenv("TERM_PROGRAM") {
+		switch term {
 		case "iTerm.app":
 			script := fmt.Sprintf(`tell application "iTerm2" to tell (create window with default profile) to tell current session to write text %q`, cmds[i])
 			if tab {
