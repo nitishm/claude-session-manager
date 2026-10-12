@@ -165,7 +165,7 @@ func briefVisual(b *engine.BriefData, w int) []string {
 
 	// 3. timeline
 	if len(b.Timeline) > 0 {
-		out = append(out, "", sHead.Render("TIMELINE"))
+		out = append(out, "", sHead.Render("KEY OUTCOMES"))
 		const whenW = 8
 		for i, ev := range b.Timeline {
 			last := i == len(b.Timeline)-1

@@ -26,7 +26,7 @@ func (m model) historySection(s *session, w int) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n" + sHead.Render(fmt.Sprintf("HISTORY · %d events", len(ev))) + "\n")
+	b.WriteString("\n" + sHead.Render(fmt.Sprintf("TIMELINE · %d events", len(ev))) + "\n")
 	shown := ev
 	if !m.histAll && len(ev) > histRecent {
 		shown = ev[len(ev)-histRecent:]
