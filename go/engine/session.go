@@ -25,8 +25,8 @@ type Session struct {
 
 // Turn is one message of the conversation preview.
 type Turn struct {
-	User bool
-	Text string
+	User bool   `json:"user"`
+	Text string `json:"text"`
 }
 
 func (s *Session) addTurn(user bool, text string) {

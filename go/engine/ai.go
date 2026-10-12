@@ -69,8 +69,8 @@ const askMaxSessions = 400
 
 // Hit is one search result: a session id and a reason or snippet.
 type Hit struct {
-	ID  string
-	Why string
+	ID  string `json:"id"`
+	Why string `json:"why"`
 }
 
 func (e *Engine) askIndex(all []*Session) (string, []*Session) {

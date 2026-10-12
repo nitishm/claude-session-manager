@@ -189,8 +189,8 @@ func (e *Engine) firstTagLocked(id string) string {
 
 // TagCount is a tag with the number of sessions that carry it.
 type TagCount struct {
-	Name string
-	N    int
+	Name string `json:"name"`
+	N    int    `json:"n"`
 }
 
 // TagList returns every tag with its session count, most used first.

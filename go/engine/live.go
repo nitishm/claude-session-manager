@@ -19,10 +19,13 @@ import (
 
 // LiveInfo describes one running claude process.
 type LiveInfo struct {
-	PID                   int
-	ID, Cwd, Name, Status string
-	UpdatedAt             int64 // unix millis
-	Kind                  string
+	PID       int    `json:"pid"`
+	ID        string `json:"id"`
+	Cwd       string `json:"cwd"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`    // idle, busy, or waiting on you
+	UpdatedAt int64  `json:"updatedAt"` // unix millis
+	Kind      string `json:"kind"`      // interactive, ...
 }
 
 type pidFile struct {
