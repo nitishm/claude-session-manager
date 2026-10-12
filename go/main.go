@@ -239,8 +239,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
 			m.dragging = true // grab the divider
-		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.X >= lw+2 && msg.Y >= 3:
-			return m, m.clickDetail(msg.X-lw-2, msg.Y-3, dw-4)
+		case dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.X >= lw+2 && msg.Y >= 2:
+			return m, m.clickDetail(msg.X-lw-2, msg.Y-2, dw-4) // the body starts at Y=2, under the title and search rows
 		case m.dragging && msg.Action == tea.MouseActionMotion:
 			m.split = min(max(msg.X*100/max(m.w, 1), 20), 85)
 		case m.dragging && msg.Action == tea.MouseActionRelease:
