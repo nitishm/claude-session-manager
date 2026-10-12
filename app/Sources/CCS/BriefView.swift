@@ -147,7 +147,7 @@ struct BriefView: View {
                 if here {
                     HStack(spacing: 8) {
                         Text("you are here").font(.caption.bold()).foregroundStyle(status.color)
-                        Button { Task { await store.open([session.id], fork: false) } } label: { Label("Resume here", systemImage: "play.fill").font(.caption) }
+                        Button { Task { await store.resumeOrFocus(session) } } label: { Label(session.live != nil ? "Go to window" : "Resume here", systemImage: session.live != nil ? "macwindow" : "play.fill").font(.caption) }
                             .buttonStyle(.link).disabled(!canResume).clickable("here:resume", enabled: canResume)
                     }
                     .padding(.top, 2)
