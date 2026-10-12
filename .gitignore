@@ -3,3 +3,4 @@ __pycache__/
 *.bak
 *.pre2
 .DS_Store
+ccsd

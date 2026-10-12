@@ -7,6 +7,7 @@ Browse, search, resume and clean up Claude Code sessions.
 | Path | What |
 |---|---|
 | `go/engine/` | The backend. Pure Go, no UI imports. Sessions, live status, forks, tags, query, open/delete/undo, AI calls. |
+| `go/cmd/ccsd/` | Daemon: the engine over a unix socket (HTTP+JSON) for the Mac app. |
 | `go/` | Go TUI (Bubble Tea), a client of the engine. Keys, layout, styles, popups. |
 | `ccs`, `ccs-tui` | Original Python versions. Kept for reference. |
 | `tests/pty/` | End-to-end checks: run the real binary in a pty, read the screen with `pyte`. |
@@ -16,6 +17,24 @@ Browse, search, resume and clean up Claude Code sessions.
 ```sh
 cd go && go build -o ../ccs-go . && ../ccs-go
 ```
+
+## ccsd
+
+```sh
+cd go && go build -o ../ccsd ./cmd/ccsd && ../ccsd          # socket: ~/.cache/ccs/ccsd.sock (mode 0600)
+curl -s --unix-socket ~/.cache/ccs/ccsd.sock 'http://x/sessions?q=login&sort=recent'
+```
+
+| Route | What |
+|---|---|
+| `GET /sessions` | `q dir tag sort rev stale pre live forks` filters; pinned first |
+| `GET /sessions/{id}`, `/live`, `/tags`, `/health` | detail, running sessions, tag counts |
+| `POST /sessions/{id}/pin`, `PUT /sessions/{id}/tags` | pin toggle, replace tags |
+| `POST /delete`, `/undo`, `/open` | trash, restore, open in terminal |
+| `POST /ai/{summarize,brief,ask,deep,autotag}` | Claude-backed; `deep` is a plain transcript scan |
+| `GET /events` | server-sent events: `sessions` or `live` means refetch |
+
+The JSON keys are the contract with the Mac app (`TestJSONContractKeys` pins them). Add fields, never rename.
 
 ## Tests
 
