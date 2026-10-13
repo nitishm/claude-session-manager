@@ -165,6 +165,9 @@ final class Store {
     private(set) var repos: [String: RepoState] = [:]
     private var repoAt: [String: Date] = [:]
     private(set) var prs: [String: [PRInfo]] = [:]
+    /// What is being fetched for the first time, as "kind:session id". Drives the loading spinners.
+    private(set) var loading = Set<String>()
+    func isLoading(_ kind: String, _ id: String) -> Bool { loading.contains(kind + ":" + id) }
     private var prsAt: [String: Date] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
@@ -376,23 +379,41 @@ final class Store {
     }
 
     func loadFacts(_ id: String) async {
+        let k = "facts:" + id
+        if facts[id] == nil { loading.insert(k) }
+        defer { loading.remove(k) }
         if let f = await run("facts", refetch: false, { try $0.facts(id) }) { facts[id] = f }
     }
 
     /// Branch, dirty count and PR state. Shells out in ccsd, so it is fetched once a minute at most per session.
     func loadRepo(_ id: String) async {
-        if let t = repoAt[id], Date().timeIntervalSince(t) < 60, repos[id] != nil { return }
+        if let t = repoAt[id], Date().timeIntervalSince(t) < 40, repos[id] != nil { return }
         repoAt[id] = Date()
+        let k = "repo:" + id
+        if repos[id] == nil { loading.insert(k) }
+        defer { loading.remove(k) }
         if let r = await run("repo", refetch: false, { try $0.repo(id) }) { repos[id] = r } else { repoAt[id] = nil }
     }
 
+    /// True while some PR of the session can still change: open, or not read yet. Merged and closed PRs are final.
+    func prsLive(_ id: String) -> Bool {
+        guard let list = prs[id] else { return true }
+        return list.contains { $0.pr == nil || $0.pr?.state == "OPEN" }
+    }
+
     func loadPRs(_ id: String) async {
-        if let t = prsAt[id], Date().timeIntervalSince(t) < 60, prs[id] != nil { return }
+        if let t = prsAt[id], Date().timeIntervalSince(t) < 40, prs[id] != nil { return }
         prsAt[id] = Date()
+        let k = "prs:" + id
+        if prs[id] == nil { loading.insert(k) }
+        defer { loading.remove(k) }
         if let r = await run("pull requests", refetch: false, { try $0.prs(id) }) { prs[id] = r } else { prsAt[id] = nil }
     }
 
     func loadTimeline(_ id: String) async {
+        let k = "timeline:" + id
+        if timelines[id] == nil { loading.insert(k) }
+        defer { loading.remove(k) }
         if let t = await run("history", refetch: false, { try $0.timeline(id) }) { timelines[id] = t }
     }
 

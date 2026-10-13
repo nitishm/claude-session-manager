@@ -81,6 +81,8 @@ struct DetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.callout).foregroundStyle(.red) }
+                if store.repos[session.id] == nil, store.isLoading("repo", session.id) { loadingRow("Checking the repository…") }
+                if store.prs[session.id] == nil, store.isLoading("prs", session.id) { loadingRow("Loading pull requests…") }
                 if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r, showPR: (store.prs[session.id] ?? []).isEmpty) }
                 if let list = store.prs[session.id], !list.isEmpty { PRStrip(store: store, prs: list) }
                 if let t = store.timelines[session.id], !t.artifacts.isEmpty { ArtifactStrip(store: store, artifacts: t.artifacts) }
@@ -90,6 +92,7 @@ struct DetailView: View {
                     if let d = store.briefData { BriefView(store: store, session: session, data: d, facts: store.facts[session.id]) } else { section("Brief") { Text(t).textSelection(.enabled) } }
                 }
                 else if store.briefBusy, store.briefID == session.id { ProgressView("asking claude… (5-15s)").controlSize(.small) }
+                if store.facts[session.id] == nil, store.isLoading("facts", session.id) || store.isLoading("timeline", session.id) { loadingRow("Reading the transcript…") }
                 if let f = store.facts[session.id], !(brief != nil && store.briefData != nil) { FactsView(store: store, session: session, facts: f) }
                 if brief == nil, !store.briefBusy {
                     Text("No brief for this session.").font(.callout).foregroundStyle(.secondary)
@@ -104,13 +107,30 @@ struct DetailView: View {
         }
         }
         .task(id: session.id) {
-            await store.loadResume(session.id)
-            await store.loadFacts(session.id)
-            await store.loadRepo(session.id)
-            await store.loadPRs(session.id)
-            await store.loadTimeline(session.id)
-            await store.ensureBrief(session.id, canMake: !session.stub)
+            // Everything loads at once, so the slow ones (gh, the brief) do not hold up the fast ones.
+            let id = session.id, canMake = !session.stub
+            async let resume: Void = store.loadResume(id)
+            async let facts: Void = store.loadFacts(id)
+            async let repo: Void = store.loadRepo(id)
+            async let prs: Void = store.loadPRs(id)
+            async let timeline: Void = store.loadTimeline(id)
+            async let brief: Void = store.ensureBrief(id, canMake: canMake)
+            _ = await (resume, facts, repo, prs, timeline, brief)
         }
+        .task(id: session.id) {
+            // Keep the PR list and repo strip current while this session stays open. Quiet when the app is in the
+            // background, and for sessions whose PRs are all merged or closed, which cannot change.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(45))
+                guard !Task.isCancelled, NSApp.isActive else { continue }
+                await store.loadRepo(session.id)
+                if store.prsLive(session.id) { await store.loadPRs(session.id) }
+            }
+        }
+    }
+
+    private func loadingRow(_ text: String) -> some View {
+        HStack(spacing: 8) { ProgressView().controlSize(.small); Text(text).font(.callout).foregroundStyle(.secondary) }
     }
 
     private var staleBanner: some View {
@@ -142,7 +162,6 @@ struct DetailView: View {
                     chip("folder", session.dir, session.dirGone ? .red : (store.hover == "dir" ? Color.accentColor : .secondary))
                 }
                 .buttonStyle(.plain).onHover { store.setHover("dir", $0) }.disabled(session.dirGone).clickable(enabled: !session.dirGone).help("Reveal in Finder")
-                if !session.repo.isEmpty { chip("arrow.triangle.branch", session.repo, .secondary) }
                 chip("clock", "active \(ago(session.mtime)) ago", .secondary)
                 chip("text.bubble", "\(session.prompts) prompts", .secondary)
                 if session.forks > 0 { chip("arrow.triangle.branch", "\(session.forks) fork(s)", .secondary) }
