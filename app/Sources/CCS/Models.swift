@@ -233,6 +233,26 @@ struct TLEvent: Codable, Hashable, Identifiable {
     var id: String { "\(at.timeIntervalSince1970)|\(kind)|\(text)" }
 }
 
+/// A pull request the session linked, with its live state from gh (nil when gh could not read it).
+struct PRInfo: Codable, Hashable, Identifiable {
+    let number: Int
+    let url: String
+    let at: Date
+    let pr: PRState?
+    let err: String?
+    var id: String { url.isEmpty ? "#\(number)" : url }
+}
+
+/// A page Claude published during the session.
+struct Artifact: Codable, Hashable, Identifiable {
+    let title: String
+    let url: String
+    let file: String?
+    let at: Date
+    var id: String { url }
+}
+
 struct Timeline: Codable, Hashable {
     @NullAsEmpty var events: [TLEvent]
+    @NullAsEmpty var artifacts: [Artifact]
 }

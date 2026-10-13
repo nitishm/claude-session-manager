@@ -32,6 +32,7 @@ type Engine struct {
 	timelines map[string]*Timeline
 
 	repoStates map[string]repoStateEntry // slow jj/git/gh results, guarded by mu
+	prCache    map[string]prEntry        // one gh result per PR url, guarded by mu
 
 	sem chan struct{} // limits parallel claude -p calls
 }

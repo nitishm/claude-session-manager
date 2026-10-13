@@ -79,9 +79,11 @@ struct DetailView: View {
         header
         Divider()
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if session.dirGone { Text("The directory is gone, so this cannot be resumed.").font(.callout).foregroundStyle(.red) }
-                if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r) }
+                if let r = store.repos[session.id], r.kind != "" || r.pr != nil { RepoStrip(store: store, session: session, repo: r, showPR: (store.prs[session.id] ?? []).isEmpty) }
+                if let list = store.prs[session.id], !list.isEmpty { PRStrip(store: store, prs: list) }
+                if let t = store.timelines[session.id], !t.artifacts.isEmpty { ArtifactStrip(store: store, artifacts: t.artifacts) }
                 if !session.stub { AskView(store: store, session: session) }
                 if brief != nil, store.briefStale { staleBanner }
                 if let t = brief {
@@ -105,6 +107,7 @@ struct DetailView: View {
             await store.loadResume(session.id)
             await store.loadFacts(session.id)
             await store.loadRepo(session.id)
+            await store.loadPRs(session.id)
             await store.loadTimeline(session.id)
             await store.ensureBrief(session.id, canMake: !session.stub)
         }
@@ -264,6 +267,7 @@ struct RepoStrip: View {
     @Bindable var store: Store
     let session: Session
     let repo: RepoState
+    var showPR = true
 
     var body: some View {
         HStack(spacing: 8) {
@@ -272,7 +276,7 @@ struct RepoStrip: View {
                 if repo.dirty > 0 { chip("pencil", "\(repo.dirty) changed", .orange) } else { chip("checkmark", "clean", .secondary) }
                 if repo.ahead > 0 || repo.behind > 0 { chip("arrow.up.arrow.down", "\(repo.ahead) ahead, \(repo.behind) behind", .secondary) }
             }
-            if let p = repo.pr { prChip(p) }
+            if showPR, let p = repo.pr { prChip(p) }
             Spacer(minLength: 0)
         }
     }

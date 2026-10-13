@@ -17,6 +17,7 @@ struct ContentView: View {
             if let s = store.single { TagEditor(store: store, session: s) }
         }
         .sheet(item: $store.asking) { mode in AskSheet(store: store, mode: mode) }
+        .sheet(item: $store.merging) { pair in MergeSheet(store: store, pair: pair) }
         .confirmationDialog("Move \(store.selection.count) session(s) to the Trash?", isPresented: $store.confirmDelete) {
             Button("Move to Trash", role: .destructive) {
                 let ids = Array(store.selection)
@@ -122,6 +123,7 @@ struct ContentView: View {
         let ids = store.selection.contains(s.id) ? Array(store.selection) : [s.id]
         Button("Resume") { Task { await store.resume(ids) } }
         Button("Fork") { Task { await store.open(ids, fork: true) } }
+        if ids.count == 2 { Button("Merge these two…") { store.selection = Set(ids); store.startMerge() } }
         Divider()
         Button(s.pinned ? "Unpin" : "Pin") { Task { await store.pin(ids) } }
         Button("Auto-tag with Claude") { Task { await store.autoTag(ids) } }
@@ -151,7 +153,7 @@ struct ContentView: View {
             DetailView(store: store, session: s)
         } else if store.selection.count > 1 {
             ContentUnavailableView("\(store.selection.count) sessions selected", systemImage: "checklist",
-                                   description: Text("Return resumes them all. Right-click for more."))
+                                   description: Text(store.selection.count == 2 ? "Return resumes them both. Merge combines them into one new session." : "Return resumes them all. Right-click for more."))
         } else {
             ContentUnavailableView("Select a session", systemImage: "text.bubble",
                                    description: Text("Search above, or ask Claude to find one."))
@@ -195,6 +197,8 @@ struct ContentView: View {
         ToolbarItemGroup {
             Button { Task { await store.pin(Array(store.selection)) } } label: { Label("Pin", systemImage: "star") }
                 .keyboardShortcut("p", modifiers: .command).disabled(store.selection.isEmpty).help("Pin or unpin (⌘P)")
+            Button { store.startMerge() } label: { Label("Merge", systemImage: "arrow.triangle.merge") }
+                .disabled(store.selection.count != 2).help("Merge the two selected sessions into a new one")
             Button { store.confirmDelete = true } label: { Label("Trash", systemImage: "trash") }
                 .keyboardShortcut(.delete, modifiers: .command).disabled(store.selection.isEmpty).help("Move to Trash (⌘⌫)")
             Button { Task { await store.undo() } } label: { Label("Undo delete", systemImage: "arrow.uturn.backward") }

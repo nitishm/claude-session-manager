@@ -424,3 +424,29 @@ func TestFocusNotRunning(t *testing.T) {
 		t.Errorf("unknown session = %d", c)
 	}
 }
+
+func TestMergeValidates(t *testing.T) {
+	ts, _, _ := setup(t)
+	var out map[string]any
+	if c := call(t, ts, "POST", "/sessions/merge", map[string]string{"lead": "aaa", "other": "aaa"}, &out); c != 400 {
+		t.Errorf("same session twice = %d", c)
+	}
+	if c := call(t, ts, "POST", "/sessions/merge", map[string]string{"lead": "aaa", "other": "nope"}, &out); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+	if c := call(t, ts, "POST", "/sessions/merge/open", map[string]string{"lead": "aaa", "file": "/etc/passwd"}, &out); c != 400 {
+		t.Errorf("a file outside the merges dir must be refused: %d", c)
+	}
+}
+
+func TestPRsEndpoint(t *testing.T) {
+	ts, _, _ := setup(t)
+	var out []map[string]any
+	if c := call(t, ts, "GET", "/sessions/aaa/prs", nil, &out); c != 200 {
+		t.Errorf("a session with no PR links answers with an empty list: %d", c)
+	}
+	var errBody map[string]any
+	if c := call(t, ts, "GET", "/sessions/nope/prs", nil, &errBody); c != 404 {
+		t.Errorf("unknown session = %d", c)
+	}
+}

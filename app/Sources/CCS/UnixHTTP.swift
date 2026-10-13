@@ -173,6 +173,16 @@ struct API: Sendable {
         return r["answer"] ?? ""
     }
 
+    struct MergeReply: Decodable { let handoff: String; let file: String; let common: Int; let leadN: Int; let otherN: Int }
+
+    func merge(lead: String, other: String, guidance: String) throws -> MergeReply {
+        try decode(http.request("POST", "/sessions/merge", body: json(["lead": lead, "other": other, "guidance": guidance]), timeout: 200), MergeReply.self)
+    }
+
+    func mergeOpen(lead: String, file: String) throws {
+        _ = try decode(http.request("POST", "/sessions/merge/open", body: json(["lead": lead, "file": file])), [String: Bool].self)
+    }
+
     struct FocusReply: Decodable { let focused: Bool; let running: Bool; let host: String?; let exact: Bool?; let error: String? }
 
     func focus(_ id: String) throws -> FocusReply { try decode(http.request("POST", "/sessions/\(id)/focus"), FocusReply.self) }
@@ -180,6 +190,7 @@ struct API: Sendable {
     func facts(_ id: String) throws -> Facts { try decode(http.request("GET", "/sessions/\(id)/facts"), Facts.self) }
 
     func timeline(_ id: String) throws -> Timeline { try decode(http.request("GET", "/sessions/\(id)/timeline"), Timeline.self) }
+    func prs(_ id: String) throws -> [PRInfo] { try decode(http.request("GET", "/sessions/\(id)/prs"), [PRInfo].self) }
     func repo(_ id: String) throws -> RepoState { try decode(http.request("GET", "/sessions/\(id)/repo"), RepoState.self) }
 
     func ask(_ query: String) throws -> [Hit] { try decode(http.request("POST", "/ai/ask", body: json(["query": query])), [Hit].self) }

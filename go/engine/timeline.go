@@ -44,7 +44,24 @@ type Event struct {
 
 // Timeline is the whole history of a session read from its transcript. No model call is involved.
 type Timeline struct {
-	Events []Event `json:"events"`
+	Events    []Event    `json:"events"`
+	Artifacts []Artifact `json:"artifacts"`
+	PRs       []PRLink   `json:"prs"`
+}
+
+// PRLink is a pull request the session linked, oldest first. State is fetched apart, by Engine.PRs.
+type PRLink struct {
+	Number int       `json:"number"`
+	URL    string    `json:"url"`
+	At     time.Time `json:"at"`
+}
+
+// Artifact is a page Claude published during the session, recorded in the transcript as a frame-link.
+type Artifact struct {
+	Title string    `json:"title"`
+	URL   string    `json:"url"`
+	File  string    `json:"file,omitempty"` // the local file it was published from, when it still exists
+	At    time.Time `json:"at"`
 }
 
 const (
@@ -65,6 +82,8 @@ type tlLine struct {
 	PRURL            string          `json:"prUrl"`
 	PRNumber         int             `json:"prNumber"`
 	FrameTitle       string          `json:"title"`
+	FrameURL         string          `json:"frameUrl"`
+	FramePath        string          `json:"path"`
 	DurationMs       int64           `json:"durationMs"`
 	RetryAttempt     int             `json:"retryAttempt"`
 	Compact          struct {
@@ -101,13 +120,14 @@ var (
 
 // ReadTimeline scans a transcript once and returns everything notable in it, oldest first.
 func ReadTimeline(path string) *Timeline {
-	tl := &Timeline{Events: []Event{}}
+	tl := &Timeline{Events: []Event{}, Artifacts: []Artifact{}, PRs: []PRLink{}}
+	seenArt := map[string]bool{}
 	fh, err := os.Open(path)
 	if err != nil {
 		return tl
 	}
 	defer fh.Close()
-	seenPR := map[int]bool{}
+	seenPR := map[string]bool{}
 	var (
 		cur      = -1 // index of the latest prompt event
 		last     time.Time
@@ -239,13 +259,31 @@ func ReadTimeline(path string) *Timeline {
 						add(Event{At: nonZero(at, last), Kind: EvTitle, Text: "renamed to " + d.CustomTitle})
 					}
 				case "pr-link":
-					if seenPR[d.PRNumber] {
+					key := d.PRURL
+					if key == "" {
+						key = fmt.Sprint(d.PRNumber)
+					}
+					if seenPR[key] {
 						break // the transcript repeats the link on every turn
 					}
-					seenPR[d.PRNumber] = true
+					seenPR[key] = true
+					tl.PRs = append(tl.PRs, PRLink{Number: d.PRNumber, URL: d.PRURL, At: nonZero(at, last)})
 					add(Event{At: nonZero(at, last), Kind: EvPR, Text: fmt.Sprintf("PR #%d linked", d.PRNumber), Detail: d.PRURL})
 				case "frame-link":
-					add(Event{At: nonZero(at, last), Kind: EvArtifact, Text: Clean(d.FrameTitle, timelineTextCh)})
+					if d.FrameURL == "" || seenArt[d.FrameURL] { // later lines only restate the count, or the same page again
+						break
+					}
+					seenArt[d.FrameURL] = true
+					title := Clean(d.FrameTitle, timelineTextCh)
+					if title == "" {
+						title = "Untitled artifact"
+					}
+					a := Artifact{Title: title, URL: d.FrameURL, At: nonZero(at, last)}
+					if st, err := os.Stat(d.FramePath); err == nil && !st.IsDir() {
+						a.File = d.FramePath
+					}
+					tl.Artifacts = append(tl.Artifacts, a)
+					add(Event{At: a.At, Kind: EvArtifact, Text: title, Detail: d.FrameURL})
 				}
 				if d.Type != "system" || d.Subtype != "api_error" {
 					flushAPI()

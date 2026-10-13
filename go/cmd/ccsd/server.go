@@ -184,6 +184,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /sessions/{id}", s.getSession)
 	m.HandleFunc("GET /sessions/{id}/facts", s.getFacts)
 	m.HandleFunc("GET /sessions/{id}/repo", s.getRepo)
+	m.HandleFunc("GET /sessions/{id}/prs", s.getPRs)
 	m.HandleFunc("GET /sessions/{id}/timeline", s.getTimeline)
 	m.HandleFunc("GET /live", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
@@ -206,6 +207,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /ai/brief", s.aiBrief)
 	m.HandleFunc("POST /ai/ask", s.aiAsk)
 	m.HandleFunc("POST /ai/ask-session", s.aiAskSession)
+	m.HandleFunc("POST /sessions/merge", s.merge)
+	m.HandleFunc("POST /sessions/merge/open", s.mergeOpen)
 	m.HandleFunc("POST /ai/deep", s.aiDeep)
 	m.HandleFunc("POST /ai/autotag", s.aiAutoTag)
 	m.HandleFunc("GET /events", s.events)
@@ -306,6 +309,18 @@ func (s *Server) getTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, 200, s.eng.Timeline(x))
+}
+
+// getPRs returns every PR the session linked, newest first, each with its live state from gh.
+func (s *Server) getPRs(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	s.mu.Unlock()
+	if x == nil || x.Path == "" {
+		fail(w, 404, "no such session")
+		return
+	}
+	reply(w, 200, s.eng.PRs(x))
 }
 
 // getRepo returns branch, dirty count and PR state. It shells out to jj, git and gh, so clients call it apart from the session fetch.
@@ -511,6 +526,63 @@ func (s *Server) aiAskSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, 200, map[string]string{"answer": ans})
+}
+
+// merge writes the handoff for two sessions. It costs one model call and does not open anything.
+func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Lead     string `json:"lead"`
+		Other    string `json:"other"`
+		Guidance string `json:"guidance"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	if b.Lead == b.Other {
+		fail(w, 400, "pick two different sessions")
+		return
+	}
+	s.mu.Lock()
+	lead, other := s.byID(b.Lead), s.byID(b.Other)
+	s.mu.Unlock()
+	if lead == nil || other == nil || lead.Path == "" || other.Path == "" {
+		fail(w, 404, "no such session")
+		return
+	}
+	doc, info, err := s.eng.MergeHandoff(lead, other, b.Guidance)
+	if err != nil {
+		fail(w, 502, "merge failed: "+err.Error())
+		return
+	}
+	file, err := s.eng.SaveHandoff(lead, doc)
+	if err != nil {
+		fail(w, 500, "could not save the handoff: "+err.Error())
+		return
+	}
+	reply(w, 200, map[string]any{"handoff": doc, "file": file, "common": info.Common, "leadN": info.LeadN, "otherN": info.OtherN})
+}
+
+// mergeOpen starts a new session from a handoff file written by merge.
+func (s *Server) mergeOpen(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Lead string `json:"lead"`
+		File string `json:"file"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	s.mu.Lock()
+	lead := s.byID(b.Lead)
+	s.mu.Unlock()
+	if lead == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	if err := s.eng.OpenMerged(lead, b.File); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	reply(w, 200, map[string]any{"opened": true})
 }
 
 func (s *Server) aiBrief(w http.ResponseWriter, r *http.Request) {

@@ -151,11 +151,21 @@ final class Store {
         var failed = false
         let at = Date()
     }
+    /// Merging two sessions into a new one. The pair is the two selected rows.
+    struct MergePair: Identifiable { let a: Session; let b: Session; var id: String { a.id + "|" + b.id } }
+    var merging: MergePair?
+    var mergeLead = ""
+    var mergeGuidance = ""
+    var mergeBusy = false
+    var mergeReply: API.MergeReply?
+    var mergeError = ""
     private(set) var qa: [String: [QA]] = [:]
     var qDraft: [String: String] = [:]
     var qBusy = Set<String>()
     private(set) var repos: [String: RepoState] = [:]
     private var repoAt: [String: Date] = [:]
+    private(set) var prs: [String: [PRInfo]] = [:]
+    private var prsAt: [String: Date] = [:]
     private(set) var resumes: [String: String] = [:] // detail-only field, fetched per selection
 
     private var pending: Task<Void, Never>?
@@ -297,6 +307,36 @@ final class Store {
         if ids.count == 1, let s = rows.first(where: { $0.id == ids[0] }) { await resumeOrFocus(s) } else { await open(ids, fork: false) }
     }
 
+    /// Opens the merge sheet for exactly two selected sessions. The original leads when one is a fork of the other.
+    func startMerge() {
+        let two = selected
+        guard two.count == 2 else { say("Select exactly two sessions to merge"); return }
+        mergeLead = (two.first(where: { !$0.fork }) ?? two.max(by: { $0.prompts < $1.prompts })!).id
+        mergeGuidance = ""; mergeReply = nil; mergeError = ""
+        merging = MergePair(a: two[0], b: two[1])
+    }
+
+    func runMerge() async {
+        guard let m = merging, !mergeBusy else { return }
+        let lead = mergeLead, other = lead == m.a.id ? m.b.id : m.a.id, g = mergeGuidance
+        mergeBusy = true; mergeError = ""; mergeReply = nil
+        defer { mergeBusy = false }
+        let api = self.api
+        do { mergeReply = try await Task.detached { try api.merge(lead: lead, other: other, guidance: g) }.value }
+        catch { mergeError = error.localizedDescription }
+    }
+
+    func openMerge() async {
+        guard let r = mergeReply else { return }
+        let lead = mergeLead
+        let api = self.api
+        do {
+            try await Task.detached { try api.mergeOpen(lead: lead, file: r.file) }.value
+            merging = nil
+            say("opened the merged session")
+        } catch { mergeError = error.localizedDescription }
+    }
+
     func resumeOrFocus(_ s: Session) async {
         guard s.live != nil, focusMissed != s.id else {
             focusMissed = nil
@@ -344,6 +384,12 @@ final class Store {
         if let t = repoAt[id], Date().timeIntervalSince(t) < 60, repos[id] != nil { return }
         repoAt[id] = Date()
         if let r = await run("repo", refetch: false, { try $0.repo(id) }) { repos[id] = r } else { repoAt[id] = nil }
+    }
+
+    func loadPRs(_ id: String) async {
+        if let t = prsAt[id], Date().timeIntervalSince(t) < 60, prs[id] != nil { return }
+        prsAt[id] = Date()
+        if let r = await run("pull requests", refetch: false, { try $0.prs(id) }) { prs[id] = r } else { prsAt[id] = nil }
     }
 
     func loadTimeline(_ id: String) async {

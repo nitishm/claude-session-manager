@@ -53,3 +53,60 @@ func TestCommitText(t *testing.T) {
 		t.Errorf("plain: %q", got)
 	}
 }
+
+func TestTimelineArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "walk.html")
+	os.WriteFile(src, []byte("<html>"), 0o644)
+	lines := []string{
+		`{"type":"user","timestamp":"2026-10-02T17:00:00Z","message":{"content":"make a page"}}`,
+		`{"type":"frame-link","path":"` + src + `","frameUrl":"https://claude.ai/artifact/abc","title":"Walkthrough","artifactCount":1,"timestamp":"2026-10-02T17:12:20Z"}`,
+		`{"type":"frame-link","artifactCount":1,"timestamp":"2026-10-02T17:20:23Z"}`,
+		`{"type":"frame-link","path":"/gone.html","frameUrl":"https://claude.ai/artifact/abc","title":"Walkthrough","timestamp":"2026-10-02T17:30:00Z"}`,
+		`{"type":"frame-link","path":"/gone2.html","frameUrl":"https://claude.ai/artifact/def","title":"Second","timestamp":"2026-10-02T17:40:00Z"}`,
+	}
+	p := filepath.Join(dir, "s.jsonl")
+	os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	tl := ReadTimeline(p)
+	if len(tl.Artifacts) != 2 {
+		t.Fatalf("want 2 artifacts (a repeat and a bare count line are skipped), got %d: %+v", len(tl.Artifacts), tl.Artifacts)
+	}
+	a, b := tl.Artifacts[0], tl.Artifacts[1]
+	if a.Title != "Walkthrough" || a.URL != "https://claude.ai/artifact/abc" || a.File != src {
+		t.Errorf("first artifact = %+v", a)
+	}
+	if b.File != "" {
+		t.Errorf("a source file that no longer exists must not be offered: %+v", b)
+	}
+	n := 0
+	for _, e := range tl.Events {
+		if e.Kind == EvArtifact {
+			n++
+			if !strings.HasPrefix(e.Detail, "https://claude.ai/artifact/") {
+				t.Errorf("event should carry the link: %+v", e)
+			}
+		}
+	}
+	if n != 2 {
+		t.Errorf("want 2 artifact events, got %d", n)
+	}
+}
+
+func TestTimelineKeepsEveryPR(t *testing.T) {
+	lines := []string{
+		`{"type":"user","timestamp":"2026-10-01T10:00:00Z","message":{"content":"go"}}`,
+		`{"type":"pr-link","timestamp":"2026-10-01T10:01:00Z","prNumber":7,"prUrl":"https://github.com/o/a/pull/7"}`,
+		`{"type":"pr-link","timestamp":"2026-10-01T10:02:00Z","prNumber":7,"prUrl":"https://github.com/o/a/pull/7"}`,
+		`{"type":"pr-link","timestamp":"2026-10-01T10:03:00Z","prNumber":7,"prUrl":"https://github.com/o/b/pull/7"}`,
+		`{"type":"pr-link","timestamp":"2026-10-01T10:04:00Z","prNumber":9,"prUrl":"https://github.com/o/a/pull/9"}`,
+	}
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	tl := ReadTimeline(p)
+	if len(tl.PRs) != 3 {
+		t.Fatalf("want 3 PRs (a repeat is dropped, the same number in another repo is kept), got %+v", tl.PRs)
+	}
+	if tl.PRs[0].URL != "https://github.com/o/a/pull/7" || tl.PRs[2].Number != 9 {
+		t.Errorf("order or content wrong: %+v", tl.PRs)
+	}
+}

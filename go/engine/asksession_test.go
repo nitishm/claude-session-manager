@@ -80,3 +80,31 @@ func TestTrimOutputKeepsEnds(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestCommonTurnsAndHandoffDoc(t *testing.T) {
+	mk := func(us ...string) []ConvoTurn {
+		var o []ConvoTurn
+		for i, u := range us {
+			o = append(o, ConvoTurn{N: i + 1, User: u})
+		}
+		return o
+	}
+	a, b := mk("goal", "step 1", "A only"), mk("goal", "step 1", "B only", "B more")
+	if k := commonTurns(a, b); k != 2 {
+		t.Fatalf("common = %d, want 2", k)
+	}
+	if commonTurns(mk("x"), mk("y")) != 0 {
+		t.Error("unrelated sessions share nothing")
+	}
+	lead := &Session{ID: "aaaaaaaa11", Path: "/p/a.jsonl", Title: "Lead", Prompts: 3}
+	other := &Session{ID: "bbbbbbbb22", Path: "/p/b.jsonl", Title: "Other", Prompts: 4}
+	doc := handoffDoc(lead, other, MergeInfo{Common: 2, LeadN: 1, OtherN: 2}, "## Shared goal\nX", "- A: code", "keep B's fix")
+	for _, want := range []string{"# Merged session: Lead", "/p/a.jsonl", "/p/b.jsonl", "share their first 2 turns, then diverge", "## Shared goal", "## Code state", "## Extra guidance from the user", "keep B's fix"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("doc missing %q", want)
+		}
+	}
+	if strings.Contains(handoffDoc(lead, other, MergeInfo{}, "## s", "", ""), "Extra guidance") {
+		t.Error("no guidance means no guidance section")
+	}
+}
