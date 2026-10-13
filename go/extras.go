@@ -134,6 +134,7 @@ func helpPopup(w, h int) string {
 		k("click", "a URL or file in the detail pane opens it (files in Zed)"),
 		k("< >", "resize the list/detail split (or drag the divider)"),
 		k("l", "running only"),
+		k("W", "waiting for you only"),
 		k("b", "before reboot"),
 		k("F", "forks + originals"),
 		k("v", "detail pane · J/K scroll"),

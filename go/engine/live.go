@@ -28,6 +28,9 @@ type LiveInfo struct {
 	Kind      string `json:"kind"`      // interactive, ...
 }
 
+// Waiting reports whether the session is stopped on the user: running, and neither idle nor busy.
+func (l LiveInfo) Waiting() bool { return l.PID != 0 && l.Status != "idle" && l.Status != "busy" }
+
 type pidFile struct {
 	PID       int    `json:"pid"`
 	SessionID string `json:"sessionId"`

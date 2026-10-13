@@ -105,13 +105,22 @@ func (m *model) syncStubs() bool {
 
 func (m model) isLive(s *session) bool { _, ok := m.live[s.ID]; return ok }
 
+func (m model) waitCount() (n int) {
+	for _, li := range m.live {
+		if li.Waiting() {
+			n++
+		}
+	}
+	return
+}
+
 func (m model) isStale(s *session) bool { return eng.IsStale(s, m.live, m.pre) }
 
 // opts is the current view as an engine query.
 func (m model) opts() engine.Opts {
 	o := engine.Opts{
 		Text: m.in.Value(), Dir: m.dirf, Tag: m.tagf, Stale: m.staleOnly,
-		PreOnly: m.preOnly, Pre: m.pre, LiveOnly: m.liveOnly, Live: m.live,
+		PreOnly: m.preOnly, Pre: m.pre, LiveOnly: m.liveOnly, WaitOnly: m.waitOnly, Live: m.live,
 		ForkOnly: m.forkOnly, Sort: engine.Sorts[m.sortIdx], Reverse: m.rev,
 	}
 	if m.askOnly {

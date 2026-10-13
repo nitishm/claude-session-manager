@@ -77,6 +77,7 @@ struct ContentView: View {
             }
             HStack(spacing: 6) {
                 filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
+                filterChip("Needs you", store.waitCount, $store.waitOnly, .blue, "chip:wait")
                 filterChip("Stale", nil, $store.staleOnly, .orange, "chip:stale")
                 filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
                 Spacer(minLength: 0)
@@ -173,6 +174,7 @@ struct ContentView: View {
 
             Menu {
                 Toggle("Running", isOn: $store.liveOnly)
+                Toggle("Needs you", isOn: $store.waitOnly)
                 Toggle("Before last reboot", isOn: $store.preOnly)
                 Toggle("Forks", isOn: $store.forksOnly)
                 Toggle("Stale", isOn: $store.staleOnly)

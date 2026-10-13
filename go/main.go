@@ -86,6 +86,7 @@ type model struct {
 	live       map[string]liveInfo
 	confirm    string
 	liveOnly   bool
+	waitOnly   bool
 	del        map[string]bool
 	delAsk     bool
 	restoreAsk bool
@@ -456,7 +457,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, h := range msg.hits {
 			m.askWhy[h.ID], m.askRank[h.ID] = h.Why, i+1
 		}
-		m.dirf, m.tagf, m.liveOnly, m.preOnly, m.forkOnly = "", "", false, false, false
+		m.dirf, m.tagf, m.liveOnly, m.waitOnly, m.preOnly, m.forkOnly = "", "", false, false, false, false
 		m.in.SetValue("")
 		m.cur, *m.top = 0, 0
 		m.refilter()
@@ -607,7 +608,7 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.all, m.del = keep, map[string]bool{}
 				m.refilter()
 				if len(m.rows) == 0 && len(m.all) > 0 { // emptied the filtered view: show everything
-					m.dirf, m.tagf, m.liveOnly, m.preOnly, m.forkOnly, m.staleOnly = "", "", false, false, false, false
+					m.dirf, m.tagf, m.liveOnly, m.waitOnly, m.preOnly, m.forkOnly, m.staleOnly = "", "", false, false, false, false, false
 					m.in.SetValue("")
 					m.cur, *m.top = 0, 0
 					m.refilter()
@@ -661,6 +662,8 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dirf = ""
 			case m.liveOnly:
 				m.liveOnly = false
+			case m.waitOnly:
+				m.waitOnly = false
 			case m.preOnly:
 				m.preOnly = false
 			default:
@@ -914,6 +917,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.liveOnly = !m.liveOnly
 			m.cur, *m.top = 0, 0
 			m.refilter()
+		case "W":
+			m.waitOnly = !m.waitOnly
+			m.cur, *m.top = 0, 0
+			m.refilter()
 		case "b":
 			if len(m.pre) == 0 {
 				return m, m.flash("no sessions found from before the last reboot")
@@ -1144,6 +1151,15 @@ func (m model) View() string {
 			lbl += " (filter on · l = all)"
 		}
 		bar += "  " + sGood.Render(lbl)
+		if wait := m.waitCount(); wait > 0 || m.waitOnly {
+			w := fmt.Sprintf("? %d waiting for you", wait)
+			if m.waitOnly {
+				w += " (filter on · W = all)"
+			} else {
+				w += " (W)"
+			}
+			bar += "  " + sAcc.Render(w)
+		}
 	}
 	if m.delAsk {
 		bar += "  " + sBad.Render(fmt.Sprintf("Delete %d sessions? (moved to Trash)  y = yes · any other key = cancel", len(m.del)))

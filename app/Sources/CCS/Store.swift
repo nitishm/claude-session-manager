@@ -24,6 +24,7 @@ final class Store {
     var tagFilter = "" { didSet { if tagFilter != oldValue { refreshSoon() } } }
     var staleOnly = false { didSet { if staleOnly != oldValue { refreshSoon() } } }
     var preOnly = false { didSet { if preOnly != oldValue { refreshSoon() } } }
+    var waitOnly = false { didSet { if waitOnly != oldValue { refreshSoon() } } }
     var liveOnly = false { didSet { if liveOnly != oldValue { refreshSoon() } } }
     var forksOnly = false { didSet { if forksOnly != oldValue { refreshSoon() } } }
 
@@ -185,6 +186,7 @@ final class Store {
     func why(_ id: String) -> String? { hits?.first { $0.id == id }?.why }
 
     var live: [Session] { fetched.filter { $0.live != nil } }
+    var waitCount: Int { fetched.filter { if let s = $0.live?.status { return s != "busy" && s != "idle" } else { return false } }.count }
     var busyCount: Int { fetched.filter { $0.live?.status == "busy" }.count }
 
     var single: Session? {
@@ -238,6 +240,7 @@ final class Store {
             if staleOnly { add("stale", "1") }
             if preOnly { add("pre", "1") }
             if liveOnly { add("live", "1") }
+            if waitOnly { add("wait", "1") }
             if forksOnly { add("forks", "1") }
         }
         if reverse { add("rev", "1") }
@@ -504,9 +507,9 @@ final class Store {
 
     func clearFilters() {
         query = ""; tagFilter = ""
-        staleOnly = false; preOnly = false; liveOnly = false; forksOnly = false
+        staleOnly = false; preOnly = false; liveOnly = false; waitOnly = false; forksOnly = false
         clearHits()
     }
 
-    var filtersActive: Bool { !tagFilter.isEmpty || staleOnly || preOnly || liveOnly || forksOnly }
+    var filtersActive: Bool { !tagFilter.isEmpty || staleOnly || preOnly || liveOnly || waitOnly || forksOnly }
 }

@@ -247,7 +247,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	o := engine.Opts{
 		Text: q.Get("q"), Dir: q.Get("dir"), Tag: strings.TrimPrefix(q.Get("tag"), "#"),
 		Stale: on(r, "stale"), PreOnly: on(r, "pre"), Pre: s.pre,
-		LiveOnly: on(r, "live"), Live: s.live, ForkOnly: on(r, "forks"),
+		LiveOnly: on(r, "live"), WaitOnly: on(r, "wait"), Live: s.live, ForkOnly: on(r, "forks"),
 		Sort: q.Get("sort"), Reverse: on(r, "rev"),
 	}
 	if o.Sort == "" {

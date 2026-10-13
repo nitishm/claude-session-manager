@@ -15,6 +15,7 @@ type Opts struct {
 	Pre      map[string]bool //
 	LiveOnly bool            // only running sessions (needs Live)
 	Live     map[string]LiveInfo
+	WaitOnly bool           // only running sessions waiting on the user (needs Live)
 	ForkOnly bool           // forks and sessions that have forks, grouped
 	AskRank  map[string]int // non-nil: only these ids, ordered by rank (an Ask or DeepSearch result)
 	Sort     string         // one of Sorts; "" means recent
@@ -110,6 +111,9 @@ func (e *Engine) Query(all []*Session, o Opts) []*Session {
 			continue
 		}
 		if _, ok := o.Live[s.ID]; o.LiveOnly && !ok {
+			continue
+		}
+		if o.WaitOnly && !o.Live[s.ID].Waiting() {
 			continue
 		}
 		h, ok := e.hay(s), true
