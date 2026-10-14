@@ -1468,7 +1468,7 @@ func main() {
 	if m.fork {
 		args = append(args, "--fork-session", "--name", engine.ForkName(m.result))
 	}
-	syscall.Exec(bin, args, os.Environ())
+	syscall.Exec(bin, args, engine.CleanEnv(os.Environ()))
 }
 
 // dirStyle colors a row's directory red when it no longer exists.

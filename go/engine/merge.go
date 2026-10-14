@@ -144,7 +144,7 @@ func (e *Engine) OpenMerged(lead *Session, file string) error {
 		return fmt.Errorf("claude not found")
 	}
 	prompt := "Read " + file + " . It is a handoff from two earlier sessions. Summarise in three lines what you now know and the first step, then wait for me."
-	cmd := shellJoin(bin, prompt)
+	cmd := Unmarked(shellJoin(bin, prompt))
 	dir := e.workDir(lead)
 	switch terminal() {
 	case "ghostty":

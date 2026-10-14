@@ -68,7 +68,7 @@ func (e *Engine) Open(ss []*Session, tab, fork bool) (int, error) {
 	}
 	var cmds []string
 	for _, s := range ss {
-		cmds = append(cmds, fmt.Sprintf("cd %q && %s", e.workDir(s), ResumeCmd(bin, s, fork)))
+		cmds = append(cmds, fmt.Sprintf("cd %q && %s", e.workDir(s), Unmarked(ResumeCmd(bin, s, fork))))
 	}
 	n := 0
 	for i := range ss {
@@ -114,7 +114,7 @@ func (e *Engine) openGhostty(ss []*Session, bin string, tab, fork bool) (int, er
 			"  set command of cfg to %q\n  set wait after command of cfg to true\n"+
 			"  if win is missing value then\n    set win to new window with configuration cfg\n"+
 			"  else\n    new tab in win with configuration cfg\n  end if\n",
-			e.workDir(s), ResumeCmd(bin, s, fork))
+			e.workDir(s), Unmarked(ResumeCmd(bin, s, fork)))
 	}
 	b.WriteString("end tell\n")
 	if out, err := exec.Command("osascript", "-e", b.String()).CombinedOutput(); err != nil {
