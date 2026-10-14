@@ -12,6 +12,9 @@ cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns" # regenerate with make-ic
 # the daemon the app launches; built from the Go module next door
 (cd ../go && go build -o "../app/$APP/Contents/MacOS/ccsd" ./cmd/ccsd)
 
+# the TUI, so "In TUI" can open it when none is running
+(cd ../go && go build -o "../app/$APP/Contents/MacOS/ccs-go" .)
+
 swiftc -parse-as-library -swift-version 5 -O \
   -framework SwiftUI -framework AppKit \
   Sources/CCS/*.swift -o "$APP/Contents/MacOS/CCS"

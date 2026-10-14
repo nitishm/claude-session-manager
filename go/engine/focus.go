@@ -74,7 +74,9 @@ var appRe = regexp.MustCompile(`^(.*?/([^/]+)\.app)(/|$)`)
 // bundleOf returns the outermost app bundle in a process command line: "/Applications/Zed.app" and "Zed".
 func bundleOf(cmd string) (path, name string) {
 	cmd = strings.TrimLeft(strings.TrimSpace(cmd), "-")
-	if m := appRe.FindStringSubmatch(cmd); m != nil {
+	// a bundle path is one path: when " /" appears inside the match, the app is only an argument
+	// of another program (login -flp user /bin/bash -c '/x/CCS.app/...')
+	if m := appRe.FindStringSubmatch(cmd); m != nil && !strings.Contains(m[1], " /") {
 		return m[1], m[2]
 	}
 	return "", ""

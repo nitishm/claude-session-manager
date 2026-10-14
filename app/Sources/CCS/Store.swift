@@ -213,7 +213,9 @@ final class Store {
                 let http = UnixHTTP(path: Daemon.sock)
                 let me = self
                 await Task.detached {
-                    try? http.events("/events") { _ in Task { @MainActor in await me.refresh() } }
+                    try? http.events("/events") { kind in Task { @MainActor in
+                        if kind == "briefs" { await me.refreshBrief() } else { await me.refresh() }
+                    } }
                 }.value
                 self.conn = .down("lost the connection to ccsd")
                 try? await Task.sleep(for: .seconds(2))
@@ -364,6 +366,14 @@ final class Store {
         }
     }
 
+    /// Selects the session in the running ccs TUI and raises it, or opens a new TUI on it.
+    func openInTUI(_ s: Session) async {
+        guard let r = await run("tui", refetch: false, { try $0.showInTUI(s.id) }) else { return }
+        if r.action == "opened" { say("opened the TUI on this session"); return }
+        let host = r.host ?? "its window"
+        say(r.exact == true ? "switched to the TUI in \(host)" : "raised \(host) (it cannot pick the TUI's tab)")
+    }
+
     func delete(_ ids: [String]) async {
         guard let r = await run("delete", { try $0.delete(ids) }) else { return }
         say(r.error ?? "moved \(r.moved) to Trash" + (r.skipped > 0 ? " (skipped \(r.skipped) running)" : "") + ". Undo is in the toolbar")
@@ -468,6 +478,14 @@ final class Store {
         briefData = r.data
         briefStale = r.stale ?? false
         briefAt = Date(timeIntervalSince1970: r.at ?? 0)
+    }
+
+    /// Another process (the TUI) wrote a brief: show it for the selected session without a spinner or a model call.
+    func refreshBrief() async {
+        guard let id = briefID, !briefBusy else { return }
+        if let r = await run("brief", refetch: false, { try $0.brief(id, force: false, cachedOnly: true) }), briefID == id, !r.brief.isEmpty {
+            apply(r, id)
+        }
     }
 
     func loadBrief(_ id: String, force: Bool = false) async {

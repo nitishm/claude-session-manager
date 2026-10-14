@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -204,7 +205,7 @@ func newModel(all []*session) model {
 			idx = i
 		}
 	}
-	if q := strings.Join(os.Args[1:], " "); q != "" {
+	if q := strings.Join(queryArgs(), " "); q != "" {
 		ti.SetValue(q)
 	}
 	boot := engine.BootTime()
@@ -230,7 +231,57 @@ func (m *model) flash(s string) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Batch(tea.SetWindowTitle(engine.TUITitle), tea.Tick(5*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }))
+}
+
+// reloadBriefs re-reads the briefs already on screen from the shared cache, never calling the model.
+func (m *model) reloadBriefs() {
+	for _, s := range m.all {
+		if e, ok := m.briefs[s.ID]; ok && e.text != "" && !m.briefGen[s.ID] {
+			if bi, ok := eng.BriefLatest(s); ok {
+				m.briefs[s.ID] = briefEntry{text: bi.Text, at: bi.At}
+			}
+		}
+	}
+}
+
+// gotoMsg asks the TUI to select a session, sent by the Mac app (SIGUSR1) or by --select.
+type gotoMsg struct{ id string }
+
+// queryArgs is the command line minus --select <id>: what remains is the search text.
+func queryArgs() []string {
+	var out []string
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == "--select" {
+			i++
+			continue
+		}
+		out = append(out, os.Args[i])
+	}
+	return out
+}
+
+func selectArg() string {
+	for i := 1; i+1 < len(os.Args); i++ {
+		if os.Args[i] == "--select" {
+			return os.Args[i+1]
+		}
+	}
+	return ""
+}
+
+// selectID clears every filter and puts the cursor on session id. It reports whether the session exists.
+func (m *model) selectID(id string) bool {
+	m.in.SetValue("")
+	m.dirf, m.tagf, m.liveOnly, m.waitOnly, m.preOnly, m.forkOnly, m.staleOnly, m.askOnly = "", "", false, false, false, false, false, false
+	m.refilter()
+	for i, s := range m.rows {
+		if s.ID == id {
+			m.cur = i
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -315,9 +366,18 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq == m.msgSeq {
 			m.msg = ""
 		}
+	case gotoMsg:
+		if !m.selectID(msg.id) {
+			return m, m.flash("that session is not in the list: press r to reload")
+		}
+		return m, nil
 	case tickMsg: // refresh what is running, keep ages fresh
 		m.live = eng.LivePids(m.boot)
-		if m.syncStubs() || m.liveOnly {
+		stateNew, briefsNew := eng.RefreshShared() // pins, tags and briefs written by the app
+		if briefsNew {
+			m.reloadBriefs()
+		}
+		if m.syncStubs() || m.liveOnly || stateNew {
 			sel := ""
 			if s := m.selected(); s != nil {
 				sel = s.ID
@@ -1326,6 +1386,9 @@ func main() {
 			return
 		}
 	}
+	if h, err := os.UserHomeDir(); err == nil {
+		engine.WidenPath(h)
+	}
 	t0 := time.Now()
 	all := eng.Load()
 	debug.FreeOSMemory() // hand the scan's transient garbage back to the OS
@@ -1365,7 +1428,24 @@ func main() {
 		}
 		return
 	}
-	fm, err := tea.NewProgram(newModel(all), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	start := newModel(all)
+	if id := selectArg(); id != "" {
+		start.selectID(id)
+	}
+	unregister := eng.RegisterTUI()
+	defer unregister()
+	p := tea.NewProgram(start, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGUSR1)
+	go func() {
+		for range sig {
+			if id := eng.TakeGoto(); id != "" {
+				p.Send(gotoMsg{id})
+			}
+		}
+	}()
+	fm, err := p.Run()
+	unregister() // syscall.Exec below skips defers
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

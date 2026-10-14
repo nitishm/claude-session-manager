@@ -187,6 +187,10 @@ struct API: Sendable {
 
     func focus(_ id: String) throws -> FocusReply { try decode(http.request("POST", "/sessions/\(id)/focus"), FocusReply.self) }
 
+    struct TUIReply: Decodable { let action: String; let host: String?; let exact: Bool? }
+
+    func showInTUI(_ id: String) throws -> TUIReply { try decode(http.request("POST", "/sessions/\(id)/tui"), TUIReply.self) }
+
     func facts(_ id: String) throws -> Facts { try decode(http.request("GET", "/sessions/\(id)/facts"), Facts.self) }
 
     func timeline(_ id: String) throws -> Timeline { try decode(http.request("GET", "/sessions/\(id)/timeline"), Timeline.self) }

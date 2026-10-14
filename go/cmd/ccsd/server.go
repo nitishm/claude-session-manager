@@ -71,10 +71,14 @@ func (s *Server) Refresh(full bool) {
 	s.all = all
 	s.mu.Unlock()
 
-	if changed || stubs {
+	stateChanged, briefsChanged := s.eng.RefreshShared() // pins, tags and briefs written by a TUI
+	if changed || stubs || stateChanged {
 		s.publish("sessions")
 	} else if liveChanged {
 		s.publish("live")
+	}
+	if briefsChanged {
+		s.publish("briefs")
 	}
 }
 
@@ -204,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /undo", s.undo)
 	m.HandleFunc("POST /open", s.open)
 	m.HandleFunc("POST /sessions/{id}/focus", s.focus)
+	m.HandleFunc("POST /sessions/{id}/tui", s.showInTUI)
 	m.HandleFunc("POST /ai/brief", s.aiBrief)
 	m.HandleFunc("POST /ai/ask", s.aiAsk)
 	m.HandleFunc("POST /ai/ask-session", s.aiAskSession)
@@ -433,6 +438,23 @@ func (s *Server) undo(w http.ResponseWriter, r *http.Request) {
 		out["error"] = err.Error()
 	}
 	reply(w, 200, out)
+}
+
+// showInTUI selects the session in a running TUI and raises it, or opens a new TUI on it.
+func (s *Server) showInTUI(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	s.mu.Unlock()
+	if x == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	res, err := s.eng.ShowInTUI(x.ID)
+	if err != nil {
+		fail(w, 500, err.Error())
+		return
+	}
+	reply(w, 200, res)
 }
 
 // focus switches to the Ghostty window of a running session instead of opening a second copy.

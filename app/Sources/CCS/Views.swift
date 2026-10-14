@@ -207,6 +207,9 @@ struct DetailView: View {
                 .buttonStyle(.borderedProminent).disabled(session.dirGone || session.stub).clickable("act:resume", enabled: !(session.dirGone || session.stub))
             Button { Task { await store.open([session.id], fork: true) } } label: { Label("Fork", systemImage: "arrow.triangle.branch") }
                 .disabled(session.dirGone || session.stub).clickable("act:fork", enabled: !(session.dirGone || session.stub))
+            Button { Task { await store.openInTUI(session) } } label: { Label("In TUI", systemImage: "terminal") }
+                .help("Show this session in the ccs TUI: switches to it if open, else opens a new one")
+                .clickable("act:tui")
             Button { Task { await store.loadBrief(session.id, force: true) } } label: { Label(brief != nil ? "Regenerate" : "Brief", systemImage: brief != nil ? "arrow.clockwise" : "doc.text.magnifyingglass") }
                 .disabled(session.stub || store.briefBusy).clickable("act:brief", enabled: !(session.stub || store.briefBusy))
             Spacer()

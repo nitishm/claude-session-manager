@@ -17,8 +17,44 @@ type stateFile struct {
 	Tags map[string][]string `json:"tags,omitempty"`
 }
 
+func modTime(path string) time.Time {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+// syncState re-reads the state file when another process (the app's daemon or a TUI) has written it
+// since we last did, so a save never overwrites their change with a stale copy. It reports whether
+// anything was reloaded. The caller must hold e.mu.
+func (e *Engine) syncState() bool {
+	if m := modTime(e.file("state-go.json")); m.Equal(e.stateMod) {
+		return false
+	}
+	e.pins, e.tags = map[string]bool{}, map[string][]string{}
+	e.loadState()
+	e.tagGen++
+	return true
+}
+
+// RefreshShared picks up changes other processes made to the shared files: state reports pins, tags or
+// sort reloaded, briefs reports that briefs.json was written. Cheap enough for a 5-second tick.
+func (e *Engine) RefreshShared() (state, briefs bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	state = e.syncState()
+	m := modTime(e.file("briefs.json"))
+	if e.briefsSeen && !m.Equal(e.briefsMod) {
+		briefs = true
+	}
+	e.briefsMod, e.briefsSeen = m, true
+	return
+}
+
 func (e *Engine) loadState() {
 	var st stateFile
+	e.stateMod = modTime(e.file("state-go.json"))
 	b, err := os.ReadFile(e.file("state-go.json"))
 	if err != nil || json.Unmarshal(b, &st) != nil {
 		return
@@ -44,6 +80,7 @@ func (e *Engine) save() {
 	os.MkdirAll(e.CacheDir, 0o755)
 	b, _ := json.Marshal(st)
 	os.WriteFile(e.file("state-go.json"), b, 0o644)
+	e.stateMod = modTime(e.file("state-go.json"))
 }
 
 // ── sort ──
@@ -59,6 +96,7 @@ func (e *Engine) Sort() string {
 func (e *Engine) SetSort(name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.syncState()
 	e.sortBy = name
 	e.save()
 }
@@ -83,6 +121,7 @@ func (e *Engine) PinCount() int {
 func (e *Engine) TogglePin(id string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.syncState()
 	if e.pins[id] {
 		delete(e.pins, id)
 	} else {
@@ -119,6 +158,7 @@ func (e *Engine) Tags(id string) []string {
 func (e *Engine) SetTags(id string, tags []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.syncState()
 	if len(tags) == 0 {
 		delete(e.tags, id)
 	} else {
@@ -132,6 +172,7 @@ func (e *Engine) SetTags(id string, tags []string) {
 func (e *Engine) AddTags(id string, add []string) []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.syncState()
 	have := e.tags[id]
 	seen := map[string]bool{}
 	for _, t := range have {

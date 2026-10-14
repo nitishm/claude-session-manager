@@ -20,27 +20,11 @@ import (
 	"ccsgo/engine"
 )
 
-// widenPath adds the usual install dirs. Launched from Finder, the daemon gets launchd's bare PATH,
-// which has neither claude (~/.local/bin) nor Homebrew tools.
-func widenPath(home string) {
-	have := map[string]bool{}
-	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-		have[d] = true
-	}
-	p := os.Getenv("PATH")
-	for _, d := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
-		if !have[d] {
-			p = d + string(os.PathListSeparator) + p
-		}
-	}
-	os.Setenv("PATH", p)
-}
-
 func main() {
 	home := flag.String("home", os.Getenv("HOME"), "home directory holding .claude and .cache/ccs")
 	sock := flag.String("sock", "", "socket path (default HOME/.cache/ccs/ccsd.sock)")
 	flag.Parse()
-	widenPath(*home)
+	engine.WidenPath(*home)
 	if *home == "" {
 		fmt.Fprintln(os.Stderr, "ccsd: no home directory")
 		os.Exit(1)

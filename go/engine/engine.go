@@ -18,14 +18,18 @@ type Engine struct {
 	Home     string // the user's home; Claude's data lives in Home/.claude
 	CacheDir string // ccs state: Home/.cache/ccs
 
-	mu      sync.Mutex
-	tags    map[string][]string // session id -> tags
-	pins    map[string]bool
-	sortBy  string
-	tagGen  int // bumps when tags change, so cached search text is rebuilt
-	emptyAt map[string]time.Time
-	repos   map[string]repoEntry
-	dirs    map[string]dirStat
+	mu     sync.Mutex
+	tags   map[string][]string // session id -> tags
+	pins   map[string]bool
+	sortBy string
+	tagGen int // bumps when tags change, so cached search text is rebuilt
+
+	stateMod   time.Time // mtime of state-go.json when we last read or wrote it
+	briefsMod  time.Time // mtime of briefs.json at the last RefreshShared
+	briefsSeen bool
+	emptyAt    map[string]time.Time
+	repos      map[string]repoEntry
+	dirs       map[string]dirStat
 
 	factsMu   sync.Mutex
 	facts     map[string]*Facts // transcript facts by session id and mtime
