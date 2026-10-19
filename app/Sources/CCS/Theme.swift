@@ -123,7 +123,7 @@ struct Clickable: ViewModifier {
         content
             .background(on ? Color.primary.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .onHover { inside in
-                guard enabled else { return }
+                guard enabled, NSApp.currentEvent?.type != .scrollWheel else { return }
                 if let key { store.setHover(key, inside) }
                 if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
             }

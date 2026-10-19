@@ -59,6 +59,9 @@ final class Store {
     var collapsed = Set<String>()
 
     func setHover(_ key: String, _ on: Bool) {
+        // Scrolling slides content under a still cursor and fires hover enter/exit on every tick; each change
+        // re-renders every Clickable. Ignore those and let the next real mouse move set it.
+        if NSApp.currentEvent?.type == .scrollWheel { return }
         if on { hover = key } else if hover == key { hover = nil }
     }
 

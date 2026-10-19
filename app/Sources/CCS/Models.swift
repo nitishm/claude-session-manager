@@ -125,13 +125,22 @@ func parseGoTime(_ raw: String) -> Date? {
         let frac = String(s[s.index(after: dot)..<end].prefix(3))
         s = String(s[..<dot]) + "." + frac + String(s[end...])
     }
-    let withFrac = ISO8601DateFormatter()
-    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = withFrac.date(from: s) { return d }
-    let plain = ISO8601DateFormatter()
-    plain.formatOptions = [.withInternetDateTime]
-    return plain.date(from: raw) ?? plain.date(from: String(s.prefix(19)) + "Z")
+    if let d = goTimeFrac.date(from: s) { return d }
+    return goTimePlain.date(from: raw) ?? goTimePlain.date(from: String(s.prefix(19)) + "Z")
 }
+
+// Building an ISO8601DateFormatter is expensive; one per call made every
+// list refresh stall the UI. Parsing with a shared instance is thread-safe.
+private let goTimeFrac: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+private let goTimePlain: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
 
 /// Short age like the TUI: now, 5m, 3h, 12d.
 func ago(_ d: Date, now: Date = Date()) -> String {
