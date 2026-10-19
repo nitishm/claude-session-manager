@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -114,12 +115,25 @@ func (m model) waitCount() (n int) {
 	return
 }
 
+// shortDesc spells out a preset: "≤5 prompts, any age" or "≤2 prompts, older than 7d".
+func shortDesc(p engine.StalePreset) string {
+	if p.Days == 0 {
+		return fmt.Sprintf("≤%d prompts, any age", p.MaxPrompts)
+	}
+	return fmt.Sprintf("≤%d prompts, older than %dd", p.MaxPrompts, p.Days)
+}
+
+// stalePreset is the short-sessions setting that z cycles through.
+func (m model) stalePreset() engine.StalePreset {
+	return engine.StalePresets[m.staleLvl%len(engine.StalePresets)]
+}
+
 func (m model) isStale(s *session) bool { return eng.IsStale(s, m.live, m.pre) }
 
 // opts is the current view as an engine query.
 func (m model) opts() engine.Opts {
 	o := engine.Opts{
-		Text: m.in.Value(), Dir: m.dirf, Tag: m.tagf, Stale: m.staleOnly,
+		Text: m.in.Value(), Dir: m.dirf, Tag: m.tagf, Stale: m.staleOnly, StaleMax: m.stalePreset().MaxPrompts, StaleAge: m.stalePreset().Days,
 		PreOnly: m.preOnly, Pre: m.pre, LiveOnly: m.liveOnly, WaitOnly: m.waitOnly, Live: m.live,
 		ForkOnly: m.forkOnly, Sort: engine.Sorts[m.sortIdx], Reverse: m.rev,
 	}

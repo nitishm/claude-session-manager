@@ -264,10 +264,21 @@ const (
 	StaleDays       = 7
 )
 
-// IsStale marks throwaway sessions: a prompt or two, untouched for a week, and nothing keeping
-// them alive (pinned, tagged, running, or open before the last reboot).
+// StalePreset is one setting of the short-sessions filter: at most MaxPrompts prompts, untouched for more than Days days (0 = any age).
+type StalePreset struct{ MaxPrompts, Days int }
+
+// StalePresets are the settings the UIs cycle through. The first is the default behind the "stale" badge.
+var StalePresets = []StalePreset{{StaleMaxPrompts, StaleDays}, {5, 0}, {10, 0}, {20, 0}}
+
+// IsStale marks throwaway sessions with the default preset.
 func (e *Engine) IsStale(s *Session, live map[string]LiveInfo, pre map[string]bool) bool {
-	if s.Path == "" || s.Prompts > StaleMaxPrompts || time.Since(s.MTime) <= StaleDays*24*time.Hour {
+	return e.IsShort(s, live, pre, StaleMaxPrompts, StaleDays)
+}
+
+// IsShort marks throwaway sessions: few prompts, untouched for a while, and nothing keeping them
+// alive (pinned, tagged, with a pull request, running, or open before the last reboot).
+func (e *Engine) IsShort(s *Session, live map[string]LiveInfo, pre map[string]bool, maxPrompts, days int) bool {
+	if s.Path == "" || s.PR != "" || s.Prompts > maxPrompts || time.Since(s.MTime) <= time.Duration(days)*24*time.Hour {
 		return false
 	}
 	if _, ok := live[s.ID]; ok || pre[s.ID] {

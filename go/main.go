@@ -98,6 +98,8 @@ type model struct {
 	reloading  bool
 	askIn      textinput.Model
 	tagIn      textinput.Model
+	renIn      textinput.Model // the new title while renaming
+	renFor     string          // id of the session being renamed
 	qIn        textinput.Model // the question box for Q
 	qFor       string          // session the question box is for
 	qa         map[string][]qaItem
@@ -113,6 +115,7 @@ type model struct {
 	askKind    string // "" or "deep": what produced the current result list
 	deepIn     textinput.Model
 	staleOnly  bool
+	staleLvl   int // index into engine.StalePresets while staleOnly
 	askOnly    bool
 	askQ       string
 	askWhy     map[string]string
@@ -198,6 +201,12 @@ func newModel(all []*session) model {
 	tg.PromptStyle = sAcc
 	tg.Placeholder = "space separated, empty clears · find with /#tag"
 	tg.PlaceholderStyle = sDim
+	rn := textinput.New()
+	rn.Prompt = " ✎ rename "
+	rn.PromptStyle = sAcc
+	rn.Placeholder = "new title · Enter saves · Esc cancels"
+	rn.PlaceholderStyle = sDim
+	rn.CharLimit = engine.MaxTitle
 	sortBy := eng.Sort()
 	idx := 0
 	for i, s := range sorts {
@@ -211,7 +220,7 @@ func newModel(all []*session) model {
 	boot := engine.BootTime()
 	pre := eng.PreBoot(all, boot)
 	live, _ := eng.ReadPids()
-	m := model{qIn: qi, qa: map[string][]qaItem{}, qBusy: map[string]bool{}, askIn: ai, deepIn: di, tagIn: tg, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}, repoSt: map[string]repoView{}}
+	m := model{qIn: qi, qa: map[string][]qaItem{}, qBusy: map[string]bool{}, askIn: ai, deepIn: di, tagIn: tg, renIn: rn, askWhy: map[string]string{}, askRank: map[string]int{}, del: map[string]bool{}, live: live, boot: boot, pre: pre, marks: map[string]bool{}, preOnly: len(pre) > 0 && time.Since(boot) < 90*time.Minute, top: new(int), all: all, sortIdx: idx, in: ti, preview: true, briefs: map[string]briefEntry{}, briefGen: map[string]bool{}, repoSt: map[string]repoView{}}
 	m.refilter()
 	return m
 }
@@ -568,6 +577,41 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.qIn, c = m.qIn.Update(msg)
 			return m, c
 		}
+		if m.renIn.Focused() {
+			switch msg.String() {
+			case "enter":
+				id := m.renFor
+				title := m.renIn.Value()
+				m.renIn.Blur()
+				m.renIn.SetValue("")
+				var target *session
+				for _, s := range m.all {
+					if s.ID == id {
+						target = s
+					}
+				}
+				if target == nil {
+					return m, m.flash("that session is gone")
+				}
+				if err := eng.Rename(target, m.live, title); err != nil {
+					return m, m.flash("rename failed: " + err.Error())
+				}
+				m.refilter()
+				for i, r := range m.rows {
+					if r.ID == id {
+						m.cur = i
+					}
+				}
+				return m, m.flash("renamed")
+			case "esc":
+				m.renIn.SetValue("")
+				m.renIn.Blur()
+				return m, nil
+			}
+			var c tea.Cmd
+			m.renIn, c = m.renIn.Update(msg)
+			return m, c
+		}
 		if m.tagIn.Focused() {
 			switch msg.String() {
 			case "enter":
@@ -774,11 +818,19 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deepIn.Focus()
 			return m, textinput.Blink
 		case "z":
-			m.staleOnly = !m.staleOnly
+			switch {
+			case !m.staleOnly:
+				m.staleOnly, m.staleLvl = true, 0
+			case m.staleLvl < len(engine.StalePresets)-1:
+				m.staleLvl++
+			default:
+				m.staleOnly = false
+			}
 			m.cur, *m.top = 0, 0
 			m.refilter()
 			if m.staleOnly {
-				return m, m.flash(fmt.Sprintf("%d stale sessions (≤%d prompts, older than %dd) · A marks all · X deletes · Esc clears", len(m.rows), staleMaxPrompts, staleDays))
+				p := m.stalePreset()
+				return m, m.flash(fmt.Sprintf("%d short sessions (%s) · z loosens · A marks all · X deletes · Esc clears", len(m.rows), shortDesc(p)))
 			}
 		case "T":
 			if m.tagging {
@@ -800,6 +852,17 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.tagging = true
 			return m, tea.Batch(autoTag(ss), m.flash(fmt.Sprintf("asking claude to tag %d session(s)… (5-10s)", len(ss))))
+		case "N":
+			if s := m.selected(); s != nil {
+				if m.isLive(s) {
+					return m, m.flash("running: use /rename inside the session")
+				}
+				m.renFor = s.ID
+				m.renIn.SetValue(s.Label())
+				m.renIn.CursorEnd()
+				m.renIn.Focus()
+				return m, textinput.Blink
+			}
 		case "t":
 			if s := m.selected(); s != nil {
 				m.tagFor = s.ID
@@ -1190,7 +1253,8 @@ func (m model) View() string {
 	}
 	tagBar := ""
 	if m.staleOnly {
-		tagBar += " · stale"
+		p := m.stalePreset()
+		tagBar += " · short " + shortDesc(p)
 	}
 	if m.tagf != "" {
 		tagBar += " · tag #" + m.tagf
@@ -1261,6 +1325,8 @@ func (m model) View() string {
 		box = m.deepIn.View()
 	} else if m.qIn.Focused() {
 		box = m.qIn.View()
+	} else if m.renIn.Focused() {
+		box = m.renIn.View()
 	} else if m.tagIn.Focused() {
 		box = m.tagIn.View()
 	} else if m.askIn.Focused() {

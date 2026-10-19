@@ -124,6 +124,7 @@ func helpPopup(w, h int) string {
 		k("/", "search · #tag filters"),
 		k("D", "deep search: all replies"),
 		k("t / T", "tag · T = auto-tag with claude"),
+		k("N", "rename the session (not while it is running)"),
 		k("#", "filter by tag (press again = next)"),
 		k("a", "ask claude in plain English"),
 	}
@@ -140,7 +141,7 @@ func helpPopup(w, h int) string {
 		k("v", "detail pane · J/K scroll"),
 		k("V", "detail pane full screen (v shows the list again)"),
 		k("S", "regenerate the brief (it shows in the detail pane)"),
-		k("z", "stale: ≤2 prompts, >7d old"),
+		k("z", "short sessions: ≤2 prompts/7d old, then ≤5, ≤10, ≤20 (any age), off"),
 		k("r", "reload · q quit"),
 		"",
 		sec("LEGEND"),
@@ -263,8 +264,3 @@ func tagCols(tagW int) int {
 	}
 	return tagW + 1
 }
-
-const (
-	staleMaxPrompts = 2
-	staleDays       = 7
-)

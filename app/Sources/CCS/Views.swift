@@ -216,6 +216,7 @@ struct DetailView: View {
             HStack(spacing: 4) {
                 iconButton("chevron.left.forwardslash.chevron.right", "Open folder in Zed", "act:zed", off: session.dirGone) { store.openFolderInEditor(session.cwd) }
                 iconButton("terminal", "New terminal in this folder", "act:term", off: session.dirGone) { store.openTerminalHere(session.cwd) }
+                iconButton("pencil", "Rename this session", "act:rename", off: session.stub) { store.startRename(session) }
                 iconButton("doc.on.doc", "Copy resume command", "act:copy") { store.copy("cd \(session.cwd) && claude --resume \(session.id)", note: "copied resume command") }
                 if let u = URL(string: session.pr), !session.pr.isEmpty {
                     iconButton("arrow.up.right.square", "Open PR in browser", "act:pr") { NSWorkspace.shared.open(u) }

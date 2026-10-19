@@ -450,3 +450,30 @@ func TestPRsEndpoint(t *testing.T) {
 		t.Errorf("unknown session = %d", c)
 	}
 }
+
+func TestRenameEndpoint(t *testing.T) {
+	ts, _, home := setup(t)
+	var out map[string]string
+	if code := call(t, ts, "POST", "/sessions/aaa/rename", map[string]string{"title": "  Login   fix "}, &out); code != 200 || out["label"] != "Login fix" {
+		t.Fatalf("rename: %d %v", code, out)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, ".claude", "projects", "p", "aaa.jsonl"))
+	if !strings.Contains(string(b), `"customTitle":"Login fix"`) {
+		t.Fatalf("transcript has no title line: %s", b)
+	}
+	var list []struct{ ID, Label string }
+	call(t, ts, "GET", "/sessions", nil, &list)
+	for _, s := range list {
+		if s.ID == "aaa" && s.Label != "Login fix" {
+			t.Fatalf("list still shows %q", s.Label)
+		}
+	}
+	for _, bad := range []map[string]string{{"title": ""}, {"title": strings.Repeat("x", 200)}} {
+		if code := call(t, ts, "POST", "/sessions/aaa/rename", bad, &out); code != 400 {
+			t.Fatalf("bad title %v: %d", bad["title"][:min(5, len(bad["title"]))], code)
+		}
+	}
+	if code := call(t, ts, "POST", "/sessions/nope/rename", map[string]string{"title": "x"}, &out); code != 404 {
+		t.Fatalf("missing session: %d", code)
+	}
+}

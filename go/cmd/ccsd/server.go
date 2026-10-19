@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 		reply(w, 200, tl)
 	})
 	m.HandleFunc("POST /sessions/{id}/pin", s.pin)
+	m.HandleFunc("POST /sessions/{id}/rename", s.rename)
 	m.HandleFunc("PUT /sessions/{id}/tags", s.setTags)
 	m.HandleFunc("POST /delete", s.del)
 	m.HandleFunc("POST /undo", s.undo)
@@ -218,6 +220,14 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /ai/autotag", s.aiAutoTag)
 	m.HandleFunc("GET /events", s.events)
 	return m
+}
+
+func atoi(v string) int {
+	n, _ := strconv.Atoi(v)
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 func reply(w http.ResponseWriter, code int, v any) {
@@ -251,7 +261,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	o := engine.Opts{
 		Text: q.Get("q"), Dir: q.Get("dir"), Tag: strings.TrimPrefix(q.Get("tag"), "#"),
-		Stale: on(r, "stale"), PreOnly: on(r, "pre"), Pre: s.pre,
+		Stale: on(r, "stale"), StaleMax: atoi(q.Get("max")), StaleAge: atoi(q.Get("days")), PreOnly: on(r, "pre"), Pre: s.pre,
 		LiveOnly: on(r, "live"), WaitOnly: on(r, "wait"), Live: s.live, ForkOnly: on(r, "forks"),
 		Sort: q.Get("sort"), Reverse: on(r, "rev"),
 	}
@@ -388,6 +398,32 @@ func (s *Server) pick(ids []string) ([]*engine.Session, string) {
 		return nil, "no ids given"
 	}
 	return out, ""
+}
+
+// rename sets the session's title. Running sessions are refused.
+func (s *Server) rename(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Title string `json:"title"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	s.mu.Lock()
+	x := s.byID(r.PathValue("id"))
+	if x == nil {
+		s.mu.Unlock()
+		fail(w, 404, "no such session")
+		return
+	}
+	err := s.eng.Rename(x, s.live, b.Title)
+	label := x.Label()
+	s.mu.Unlock()
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	s.publish("sessions")
+	reply(w, 200, map[string]any{"label": label})
 }
 
 func (s *Server) del(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,7 @@
 # Builds build/CCS.app with plain swiftc (no Xcode needed) and bundles ccsd inside it.
 #   ./build.sh          build the app
 #   ./build.sh run      build, then open it
+#   ./build.sh install  build, then copy it to ~/Applications (quits a running copy first) and open it
 set -eu
 cd "$(dirname "$0")"
 APP=build/CCS.app
@@ -44,4 +45,15 @@ codesign --force --deep -s "$ID" "$APP" >/dev/null 2>&1 || echo "warning: codesi
 [ "$ID" = - ] && echo "note: ad-hoc signed, so macOS will re-ask for folder access after each rebuild (run make-signing-cert.sh once)"
 echo "built $APP"
 [ "${1:-}" = run ] && open "$APP"
+if [ "${1:-}" = install ]; then
+  DEST="$HOME/Applications"
+  mkdir -p "$DEST"
+  pkill -x CCS 2>/dev/null || true
+  pkill -f "CCS.app/Contents/.*ccsd" 2>/dev/null || true
+  sleep 1
+  rm -rf "$DEST/CCS.app"
+  cp -R "$APP" "$DEST/CCS.app"
+  echo "installed $DEST/CCS.app"
+  open "$DEST/CCS.app"
+fi
 exit 0

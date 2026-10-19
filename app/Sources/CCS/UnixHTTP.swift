@@ -149,6 +149,10 @@ struct API: Sendable {
 
     func pin(_ id: String) throws { _ = try decode(http.request("POST", "/sessions/\(id)/pin"), [String: Bool].self) }
 
+    func rename(_ id: String, _ title: String) throws {
+        _ = try decode(http.request("POST", "/sessions/\(id)/rename", body: json(["title": title])), [String: String].self)
+    }
+
     func setTags(_ id: String, _ tags: [String]) throws {
         _ = try decode(http.request("PUT", "/sessions/\(id)/tags", body: json(["tags": tags])), [String: [String]].self)
     }

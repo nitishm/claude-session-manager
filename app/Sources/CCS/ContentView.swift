@@ -18,12 +18,13 @@ struct ContentView: View {
         }
         .sheet(item: $store.asking) { mode in AskSheet(store: store, mode: mode) }
         .sheet(item: $store.merging) { pair in MergeSheet(store: store, pair: pair) }
+        .sheet(item: $store.renaming) { s in RenameSheet(store: store, session: s) }
         .confirmationDialog("Move \(store.selection.count) session(s) to the Trash?", isPresented: $store.confirmDelete) {
             Button("Move to Trash", role: .destructive) {
                 let ids = Array(store.selection)
                 Task { await store.delete(ids) }
             }
-        } message: { Text("Running sessions are skipped. Undo in the toolbar restores the last batch.") }
+        } message: { Text("\(store.deletePreview)\n\nRunning sessions are skipped. Undo in the toolbar restores the last batch.") }
         .frame(minWidth: 900, minHeight: 520)
     }
 
@@ -42,6 +43,7 @@ struct ContentView: View {
                 }
                 .font(.callout).padding(.horizontal, 12).padding(.vertical, 6).background(.quaternary)
             }
+            if store.staleOnly { shortBanner }
             if case .down(let why) = store.conn { downBanner(why) }
             List(selection: $store.selection) {
                 ForEach(store.rows) { s in
@@ -78,7 +80,7 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
                 filterChip("Needs you", store.waitCount, $store.waitOnly, .blue, "chip:wait")
-                filterChip("Stale", nil, $store.staleOnly, .orange, "chip:stale")
+                filterChip("Short ≤\(store.shortPreset.max)", nil, $store.staleOnly, .orange, "chip:stale")
                 filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
                 Spacer(minLength: 0)
             }
@@ -86,6 +88,30 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: Theme.headerHeight, maxHeight: Theme.headerHeight, alignment: .leading)
         .background(Theme.headerBG)
+    }
+
+    private func shortLabel(_ i: Int) -> String {
+        let p = Store.shortPresets[i]
+        return "≤\(p.max) prompts, \(p.days == 0 ? "any age" : "older than \(p.days) days")"
+    }
+
+    /// Shown while the Short filter is on: how many match, how loose the filter is, and the mass actions.
+    private var shortBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle.fill").foregroundStyle(.orange)
+            Text("\(store.rows.count) short").font(.callout.weight(.semibold))
+            Menu {
+                Picker("Short means", selection: $store.shortLevel) {
+                    ForEach(Store.shortPresets.indices, id: \.self) { Text(shortLabel($0)).tag($0) }
+                }
+            } label: { Text(shortLabel(store.shortLevel)).font(.caption) }
+                .menuStyle(.borderlessButton).fixedSize()
+            Spacer()
+            Button("Select all") { store.selectAllRows() }.disabled(store.rows.isEmpty).clickable("short:all", enabled: !store.rows.isEmpty)
+            Button("Move to Trash…", role: .destructive) { store.selectAllRows(); store.confirmDelete = true }
+                .disabled(store.rows.isEmpty).clickable("short:trash", enabled: !store.rows.isEmpty)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6).background(Color.orange.opacity(0.14))
     }
 
     private func filterChip(_ title: String, _ n: Int?, _ on: Binding<Bool>, _ color: Color, _ key: String) -> some View {
@@ -124,6 +150,7 @@ struct ContentView: View {
         let ids = store.selection.contains(s.id) ? Array(store.selection) : [s.id]
         Button("Resume") { Task { await store.resume(ids) } }
         Button("Fork") { Task { await store.open(ids, fork: true) } }
+        if ids.count == 1 { Button("Rename…") { store.startRename(s) } }
         if ids.count == 2 { Button("Merge these two…") { store.selection = Set(ids); store.startMerge() } }
         Divider()
         Button(s.pinned ? "Unpin" : "Pin") { Task { await store.pin(ids) } }
@@ -177,7 +204,10 @@ struct ContentView: View {
                 Toggle("Needs you", isOn: $store.waitOnly)
                 Toggle("Before last reboot", isOn: $store.preOnly)
                 Toggle("Forks", isOn: $store.forksOnly)
-                Toggle("Stale", isOn: $store.staleOnly)
+                Toggle("Short sessions", isOn: $store.staleOnly)
+                Picker("Short means", selection: $store.shortLevel) {
+                    ForEach(Store.shortPresets.indices, id: \.self) { Text(shortLabel($0)).tag($0) }
+                }
                 if !store.tagCounts.isEmpty {
                     Divider()
                     Picker("Tag", selection: $store.tagFilter) {

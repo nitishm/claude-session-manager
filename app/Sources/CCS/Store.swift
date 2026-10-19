@@ -23,6 +23,10 @@ final class Store {
     var reverse = false { didSet { if reverse != oldValue { refreshSoon() } } }
     var tagFilter = "" { didSet { if tagFilter != oldValue { refreshSoon() } } }
     var staleOnly = false { didSet { if staleOnly != oldValue { refreshSoon() } } }
+    /// "Short" sessions: at most `max` prompts, untouched for more than `days` days. Mirrors engine.StalePresets.
+    static let shortPresets: [(max: Int, days: Int)] = [(2, 7), (5, 0), (10, 0), (20, 0)]
+    var shortLevel = 0 { didSet { if shortLevel != oldValue && staleOnly { refreshSoon() } } }
+    var shortPreset: (max: Int, days: Int) { Store.shortPresets[min(max(shortLevel, 0), Store.shortPresets.count - 1)] }
     var preOnly = false { didSet { if preOnly != oldValue { refreshSoon() } } }
     var waitOnly = false { didSet { if waitOnly != oldValue { refreshSoon() } } }
     var liveOnly = false { didSet { if liveOnly != oldValue { refreshSoon() } } }
@@ -155,6 +159,9 @@ final class Store {
     /// Merging two sessions into a new one. The pair is the two selected rows.
     struct MergePair: Identifiable { let a: Session; let b: Session; var id: String { a.id + "|" + b.id } }
     var merging: MergePair?
+    var renaming: Session?
+    var renameDraft = ""
+    var renameBusy = false
     var mergeLead = ""
     var mergeGuidance = ""
     var mergeBusy = false
@@ -239,7 +246,7 @@ final class Store {
         if hits == nil {
             add("q", query)
             add("tag", tagFilter)
-            if staleOnly { add("stale", "1") }
+            if staleOnly { add("stale", "1"); add("max", String(shortPreset.max)); add("days", String(shortPreset.days)) }
             if preOnly { add("pre", "1") }
             if liveOnly { add("live", "1") }
             if waitOnly { add("wait", "1") }
@@ -293,6 +300,24 @@ final class Store {
     func pin(_ ids: [String]) async {
         for id in ids { _ = await run("pin", refetch: false) { try $0.pin(id) } }
         await refresh()
+    }
+
+    func startRename(_ s: Session) {
+        if s.live != nil { say("it is running: use /rename inside the session"); return }
+        if s.stub { say("it has no transcript yet"); return }
+        renameDraft = s.displayLabel
+        renaming = s
+    }
+
+    func commitRename() async {
+        guard let s = renaming, !renameBusy else { return }
+        let title = renameDraft
+        renameBusy = true
+        defer { renameBusy = false }
+        if await run("rename", { try $0.rename(s.id, title) }) != nil {
+            renaming = nil
+            say("renamed")
+        }
     }
 
     func setTags(_ id: String, _ tags: [String]) async {
@@ -521,6 +546,16 @@ final class Store {
         guard hits != nil else { return }
         hits = nil
         refreshSoon()
+    }
+
+    func selectAllRows() { selection = Set(rows.map(\.id)) }
+
+    /// What the delete confirmation shows: every title for a small batch, else the 5 oldest and 5 newest.
+    var deletePreview: String {
+        let ss = fetched.filter { selection.contains($0.id) }.sorted { $0.mtime < $1.mtime }
+        func line(_ s: Session) -> String { "• \(String(s.displayLabel.prefix(60))) (\(s.prompts) prompts)" }
+        if ss.count <= 10 { return ss.map(line).joined(separator: "\n") }
+        return "Oldest:\n" + ss.prefix(5).map(line).joined(separator: "\n") + "\n\nNewest:\n" + ss.suffix(5).map(line).joined(separator: "\n")
     }
 
     func clearFilters() {

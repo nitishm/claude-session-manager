@@ -11,6 +11,8 @@ type Opts struct {
 	Dir      string          // exact cwd
 	Tag      string          // sessions carrying this tag
 	Stale    bool            // throwaway sessions only
+	StaleMax int             // with Stale: most prompts (both fields 0 = the default preset)
+	StaleAge int             // with Stale: older than this many days (0 = any age)
 	PreOnly  bool            // only sessions open before the last reboot (needs Pre)
 	Pre      map[string]bool //
 	LiveOnly bool            // only running sessions (needs Live)
@@ -98,8 +100,14 @@ func (e *Engine) Query(all []*Session, o Opts) []*Session {
 		if o.Tag != "" && !e.HasTag(s.ID, o.Tag) {
 			continue
 		}
-		if o.Stale && !e.IsStale(s, o.Live, o.Pre) {
-			continue
+		if o.Stale {
+			maxP, days := o.StaleMax, o.StaleAge // both zero: the defaults; otherwise as given, with 0 days = any age
+			if maxP == 0 && days == 0 {
+				maxP, days = StaleMaxPrompts, StaleDays
+			}
+			if !e.IsShort(s, o.Live, o.Pre, maxP, days) {
+				continue
+			}
 		}
 		if o.PreOnly && !o.Pre[s.ID] {
 			continue
