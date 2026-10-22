@@ -12,6 +12,7 @@ type Session struct {
 	ID, Path, Cwd, Title, AI, First, Last, PR, AText, Summary string
 	Prompts                                                   int
 	MTime, Started                                            time.Time
+	Active                                                    time.Time // last message in the transcript; MTime also moves when the file is merely touched
 	PList                                                     []string
 	Turns                                                     []Turn
 	UH                                                        []uint64 // hashed message uuids; a fork copies its original's
@@ -34,6 +35,14 @@ func (s *Session) addTurn(user bool, text string) {
 	if len(s.Turns) > 4 {
 		s.Turns = s.Turns[1:]
 	}
+}
+
+// When is the last real activity: the newest message, else the file's mtime.
+func (s *Session) When() time.Time {
+	if s.Active.IsZero() {
+		return s.MTime
+	}
+	return s.Active
 }
 
 // Label is the best display name: the user's title, else the AI title, else the first prompt.

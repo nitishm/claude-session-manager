@@ -146,7 +146,7 @@ func (s *Server) view(x *engine.Session) SessionView {
 	v := SessionView{
 		ID: x.ID, Path: x.Path, Cwd: x.Cwd, Dir: s.eng.Short(x.Cwd), Label: x.Label(), Title: x.Title,
 		AITitle: x.AI, First: x.First, Last: x.Last, PR: x.PR, Summary: x.Summary, Excerpt: x.Excerpt(),
-		Prompts: x.Prompts, MTime: x.MTime, Started: x.Started, Turns: x.Turns,
+		Prompts: x.Prompts, MTime: x.When(), Started: x.Started, Turns: x.Turns,
 		Tags: s.eng.Tags(x.ID), Pinned: s.eng.Pinned(x.ID), PreBoot: s.pre[x.ID],
 		Stale: s.eng.IsStale(x, s.live, s.pre), DirGone: s.eng.DirGone(x),
 		Repo: s.eng.RepoOf(x.Cwd).String(), Fork: x.Fork, Forks: x.Forks, Stub: x.Path == "",

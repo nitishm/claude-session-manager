@@ -152,20 +152,20 @@ func (e *Engine) Query(all []*Session, o Opts) []*Session {
 				}
 				return ta < tb
 			}
-			return a.MTime.After(b.MTime)
+			return a.When().After(b.When())
 		},
-		"recent":  func(a, b *Session) bool { return a.MTime.After(b.MTime) },
-		"oldest":  func(a, b *Session) bool { return a.MTime.Before(b.MTime) },
+		"recent":  func(a, b *Session) bool { return a.When().After(b.When()) },
+		"oldest":  func(a, b *Session) bool { return a.When().Before(b.When()) },
 		"prompts": func(a, b *Session) bool { return a.Prompts > b.Prompts },
 		"dir": func(a, b *Session) bool {
 			if a.Cwd != b.Cwd {
 				return e.Short(a.Cwd) < e.Short(b.Cwd)
 			}
-			return a.MTime.After(b.MTime)
+			return a.When().After(b.When())
 		},
 	}[o.Sort]
 	if less == nil {
-		less = func(a, b *Session) bool { return a.MTime.After(b.MTime) }
+		less = func(a, b *Session) bool { return a.When().After(b.When()) }
 	}
 	if o.Reverse {
 		base := less

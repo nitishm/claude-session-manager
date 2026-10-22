@@ -125,6 +125,9 @@ func (e *Engine) scan(path string, cache map[string]string) *Session {
 			if json.Unmarshal(line, &d) == nil {
 				if d.UUID != "" && (d.Type == "user" || d.Type == "assistant") {
 					s.UH = append(s.UH, h64(d.UUID))
+					if ts, err := time.Parse(time.RFC3339, d.Timestamp); err == nil && ts.After(s.Active) && !ts.After(s.MTime) {
+						s.Active = ts
+					}
 				}
 				switch d.Type {
 				case "custom-title":

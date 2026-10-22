@@ -100,7 +100,7 @@ func forkOrigByName(f *Session, all []*Session) *Session {
 		if c == f || c.Path == "" || c.Cwd != f.Cwd || IsForkTitle(c.Title) || Clean(c.Label(), 50) != base {
 			continue
 		}
-		if best == nil || c.MTime.After(best.MTime) {
+		if best == nil || c.When().After(best.When()) {
 			best = c
 		}
 	}
@@ -118,8 +118,8 @@ func forkRoot(s *Session) string {
 func sortForkGroups(rows []*Session) {
 	gmax := map[string]time.Time{}
 	for _, r := range rows {
-		if k := forkRoot(r); r.MTime.After(gmax[k]) {
-			gmax[k] = r.MTime
+		if k := forkRoot(r); r.When().After(gmax[k]) {
+			gmax[k] = r.When()
 		}
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
@@ -130,7 +130,7 @@ func sortForkGroups(rows []*Session) {
 		if a.Fork != b.Fork {
 			return !a.Fork
 		}
-		return a.MTime.After(b.MTime)
+		return a.When().After(b.When())
 	})
 }
 

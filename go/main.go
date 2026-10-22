@@ -1208,14 +1208,14 @@ func (m model) View() string {
 		}
 		row := fmt.Sprintf(" %s%s %s %s %s %s%s",
 			badge, fk,
-			sDim.Render(pad(engine.Ago(s.MTime), 4)),
+			sDim.Render(pad(engine.Ago(s.When()), 4)),
 			dirStyle(s).Render(pad(eng.ShortDir(s.Cwd), 20)),
 			highlight(mark+rowLabel(s), words, lipgloss.NewStyle(), hiN, titleW),
 			sAcc.Render(tagCol),
 			sDim.Render(fmt.Sprintf("%4d", s.Prompts)))
 		if i == m.cur {
 			// inner styles reset the background, so rebuild the row from plain text
-			plain := fmt.Sprintf("%s%s %s %s %s %s%s", rawBadge(m, s), forkCol(s), pad(engine.Ago(s.MTime), 4),
+			plain := fmt.Sprintf("%s%s %s %s %s %s%s", rawBadge(m, s), forkCol(s), pad(engine.Ago(s.When()), 4),
 				pad(eng.ShortDir(s.Cwd), 20), "\x00", tagCol, fmt.Sprintf("%4d", s.Prompts))
 			pre, post, _ := strings.Cut(plain, "\x00")
 			row = sCursor.Render("▌") + sSel.Render(" "+pre) + highlight(mark+rowLabel(s), words, sSel, hiS, titleW) +
@@ -1346,10 +1346,10 @@ func (m model) View() string {
 }
 
 func span(s *session) string {
-	if s.Started.IsZero() || s.MTime.Sub(s.Started) < time.Minute {
+	if s.Started.IsZero() || s.When().Sub(s.Started) < time.Minute {
 		return ""
 	}
-	d := s.MTime.Sub(s.Started)
+	d := s.When().Sub(s.Started)
 	if d >= 48*time.Hour {
 		return fmt.Sprintf(" · spanned %dd", int(d.Hours()/24))
 	}
@@ -1393,12 +1393,12 @@ func (m model) detailLines(w int) []string {
 	if tg := eng.TagText(s.ID, " "); tg != "" {
 		b.WriteString(sAcc.Render(tg) + sDim.Render("  · t edits") + "\n")
 	}
-	b.WriteString(sDim.Render(fmt.Sprintf("%s · %s · %d prompts%s", s.MTime.Format("Mon 02 Jan 15:04"), engine.AgoLong(s.MTime), s.Prompts, span(s))) + "\n")
+	b.WriteString(sDim.Render(fmt.Sprintf("%s · %s · %d prompts%s", s.When().Format("Mon 02 Jan 15:04"), engine.AgoLong(s.When()), s.Prompts, span(s))) + "\n")
 	if s.PR != "" {
 		b.WriteString(hyperlink(s.PR, sLink.Render(s.PR)) + sDim.Render("  · w opens") + "\n")
 	}
 	if s.ForkOf != nil {
-		b.WriteString(sAcc.Render(forkGlyph+" fork of: ") + engine.Clean(s.ForkOf.Label(), 80) + sDim.Render(" · "+engine.AgoLong(s.ForkOf.MTime)) + "\n")
+		b.WriteString(sAcc.Render(forkGlyph+" fork of: ") + engine.Clean(s.ForkOf.Label(), 80) + sDim.Render(" · "+engine.AgoLong(s.ForkOf.When())) + "\n")
 	} else if s.Fork {
 		b.WriteString(sAcc.Render(forkGlyph+" fork") + sDim.Render(" · original not found") + "\n")
 	}
@@ -1480,10 +1480,10 @@ func main() {
 				ss = append(ss, s)
 			}
 		}
-		sort.Slice(ss, func(i, j int) bool { return ss[i].MTime.After(ss[j].MTime) })
+		sort.Slice(ss, func(i, j int) bool { return ss[i].When().After(ss[j].When()) })
 		fmt.Printf("%d sessions were active before the reboot at %s\n", len(ss), boot.Format("Mon 02 Jan 15:04"))
 		for _, s := range ss {
-			fmt.Printf("  %s  %-22s %s\n", engine.Ago(s.MTime), eng.ShortDir(s.Cwd), engine.Clean(s.Label(), 60))
+			fmt.Printf("  %s  %-22s %s\n", engine.Ago(s.When()), eng.ShortDir(s.Cwd), engine.Clean(s.Label(), 60))
 		}
 		if os.Args[1] == "--restore" && len(ss) > 0 {
 			n, err := eng.Open(ss, false, false)
