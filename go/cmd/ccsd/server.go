@@ -187,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	m.HandleFunc("GET /sessions", s.listSessions)
 	m.HandleFunc("GET /sessions/{id}", s.getSession)
+	m.HandleFunc("GET /artifacts", s.listArtifacts)
 	m.HandleFunc("GET /sessions/{id}/facts", s.getFacts)
 	m.HandleFunc("GET /sessions/{id}/repo", s.getRepo)
 	m.HandleFunc("GET /sessions/{id}/prs", s.getPRs)
@@ -255,6 +256,31 @@ func on(r *http.Request, k string) bool {
 }
 
 // GET /sessions?q=&dir=&tag=&sort=&rev=1&stale=1&pre=1&live=1&forks=1
+// ArtifactView is one published page and the session it came from. Add keys, never rename them.
+type ArtifactView struct {
+	Title     string    `json:"title"`
+	URL       string    `json:"url"`
+	File      string    `json:"file,omitempty"`
+	At        time.Time `json:"at"`
+	SessionID string    `json:"sessionId"`
+	Label     string    `json:"label"`
+	Cwd       string    `json:"cwd"`
+	Dir       string    `json:"dir"`
+	Excerpt   string    `json:"excerpt,omitempty"` // where a deep search matched inside the page
+}
+
+func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	all := s.all
+	s.mu.Unlock() // scanning transcripts can take a moment: do not hold the lock
+	rows := s.eng.SearchArtifacts(all, r.URL.Query().Get("q"), on(r, "deep"))
+	out := make([]ArtifactView, 0, len(rows))
+	for _, x := range rows {
+		out = append(out, ArtifactView{Title: x.Title, URL: x.URL, File: x.File, At: x.At, SessionID: x.SessionID, Label: x.Label, Cwd: x.Cwd, Dir: s.eng.ShortDir(x.Cwd), Excerpt: x.Excerpt})
+	}
+	reply(w, 200, out)
+}
+
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	s.mu.Lock()

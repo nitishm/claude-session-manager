@@ -477,3 +477,33 @@ func TestRenameEndpoint(t *testing.T) {
 		t.Fatalf("missing session: %d", code)
 	}
 }
+
+func TestArtifactsEndpoint(t *testing.T) {
+	ts, _, home := setup(t)
+	line := `{"type":"frame-link","title":"Board","frameUrl":"https://claude.ai/artifact/zzz","timestamp":"2026-10-20T10:00:00Z"}` + "\n"
+	p := filepath.Join(home, ".claude", "projects", "p", "aaa.jsonl")
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(line)
+	f.Close()
+	var raw []map[string]any
+	if code := call(t, ts, "GET", "/artifacts", nil, &raw); code != 200 || len(raw) != 1 {
+		t.Fatalf("artifacts: %d %v", code, raw)
+	}
+	for _, k := range []string{"title", "url", "at", "sessionId", "label", "cwd", "dir"} {
+		if _, ok := raw[0][k]; !ok {
+			t.Errorf("artifact key %q missing", k)
+		}
+	}
+	if raw[0]["sessionId"] != "aaa" {
+		t.Errorf("owner = %v", raw[0]["sessionId"])
+	}
+	if code := call(t, ts, "GET", "/artifacts?q=nomatch", nil, &raw); code != 200 || len(raw) != 0 {
+		t.Fatalf("filtered: %d %v", code, raw)
+	}
+	if code := call(t, ts, "GET", "/artifacts?q=nomatch&deep=1", nil, &raw); code != 200 || len(raw) != 0 {
+		t.Fatalf("deep filtered: %d %v", code, raw)
+	}
+}

@@ -261,6 +261,20 @@ struct Artifact: Codable, Hashable, Identifiable {
     var id: String { url }
 }
 
+/// A published page with the session it came from, from GET /artifacts.
+struct ArtifactRow: Codable, Hashable, Identifiable {
+    let title: String
+    let url: String
+    let file: String?
+    let at: Date
+    let sessionId: String
+    let label: String
+    let cwd: String
+    let dir: String
+    let excerpt: String?
+    var id: String { url }
+}
+
 struct Timeline: Codable, Hashable {
     @NullAsEmpty var events: [TLEvent]
     @NullAsEmpty var artifacts: [Artifact]

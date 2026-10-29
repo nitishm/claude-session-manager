@@ -34,6 +34,8 @@ type Engine struct {
 	factsMu   sync.Mutex
 	facts     map[string]*Facts // transcript facts by session id and mtime
 	timelines map[string]*Timeline
+	artCache  map[string][]Artifact // artifacts per session, keyed by BriefKey
+	artText   map[string]artBody    // plain text of artifact source files, keyed by path
 
 	repoStates map[string]repoStateEntry // slow jj/git/gh results, guarded by mu
 	prCache    map[string]prEntry        // one gh result per PR url, guarded by mu

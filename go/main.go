@@ -120,6 +120,7 @@ type model struct {
 	askQ       string
 	askWhy     map[string]string
 	askRank    map[string]int
+	art        artTab // the Artifacts mode (P)
 }
 
 // layout returns list width, detail width, body height.
@@ -310,7 +311,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case artMsg:
+		m.art.rows, m.art.loaded = msg.rows, true
+		if m.art.in.Value() != "" || m.art.deep {
+			m.art.rows = m.artSearch()
+		}
+		m.art.cur, m.art.top = 0, 0
+		return m, nil
 	case tea.MouseMsg:
+		if m.art.on {
+			return m, nil
+		}
 		lw, dw, _ := m.layout()
 		switch {
 		case !m.full && dw > 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y >= 2 && msg.X >= lw-1 && msg.X <= lw+1:
@@ -532,6 +543,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refilter()
 		return m, m.flash(fmt.Sprintf("%d matches · Esc clears", len(msg.hits)))
 	case tea.KeyMsg:
+		if m.art.on {
+			return m.artKey(msg)
+		}
 		if m.deepIn.Focused() {
 			switch msg.String() {
 			case "enter":
@@ -1002,6 +1016,9 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dirf = next
 			m.cur, *m.top = 0, 0
 			m.refilter()
+		case "P": // every artifact Claude published, across sessions
+			m.art = artTab{on: true, in: newArtInput()}
+			return m, loadArtifacts(m.all, "")
 		case "y":
 			if s := m.selected(); s != nil {
 				c := exec.Command("pbcopy")
@@ -1150,6 +1167,9 @@ func pad(s string, w int) string {
 func (m model) View() string {
 	if m.w == 0 {
 		return ""
+	}
+	if m.art.on {
+		return m.artView()
 	}
 	lw, dw, bodyH := m.layout()
 

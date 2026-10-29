@@ -43,8 +43,11 @@ struct ContentView: View {
                 }
                 .font(.callout).padding(.horizontal, 12).padding(.vertical, 6).background(.quaternary)
             }
-            if store.staleOnly { shortBanner }
+            if store.mode == .sessions, store.staleOnly { shortBanner }
             if case .down(let why) = store.conn { downBanner(why) }
+            if store.mode == .artifacts {
+                ArtifactList(store: store)
+            } else {
             List(selection: $store.selection) {
                 ForEach(store.rows) { s in
                     SessionRow(session: s, busy: store.busy.contains(s.id), why: store.why(s.id), selected: store.selection.contains(s.id))
@@ -60,6 +63,7 @@ struct ContentView: View {
                 Task { await store.resume(Array(store.selection)) }
                 return .handled
             }
+            }
         }
         .background(Theme.sidebarBG)
     }
@@ -67,22 +71,33 @@ struct ContentView: View {
     private var sidebarHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("Sessions").font(Theme.heading(26))
-                Text("\(store.rows.count)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+                Text(store.mode.rawValue).font(Theme.heading(26))
+                Text("\(store.mode == .artifacts ? store.artifactShown.count : store.rows.count)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
                     .padding(.horizontal, 7).padding(.vertical, 1).background(Color.primary.opacity(0.08), in: Capsule())
                 Spacer(minLength: 4)
+                if store.mode == .sessions {
                 Menu {
                     Picker("Sort", selection: $store.sort) { ForEach(Store.sorts, id: \.self) { Text($0.capitalized).tag($0) } }
                     Toggle("Reverse", isOn: $store.reverse)
                 } label: { Label(store.sort.capitalized + (store.reverse ? " ↑" : ""), systemImage: "arrow.up.arrow.down").font(.caption) }
                     .menuStyle(.borderlessButton).fixedSize()
+                }
             }
+            HStack(spacing: 8) {
+                Picker("Mode", selection: $store.mode) { ForEach(Store.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 240)
+                if store.mode == .artifacts {
+                    filterChip("Search inside pages", nil, $store.artDeep, .orange, "chip:artdeep")
+                }
+            }
+            if store.mode == .sessions {
             HStack(spacing: 6) {
                 filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
                 filterChip("Needs you", store.waitCount, $store.waitOnly, .blue, "chip:wait")
                 filterChip("Short ≤\(store.shortPreset.max)", nil, $store.staleOnly, .orange, "chip:stale")
                 filterChip("Forks", nil, $store.forksOnly, .purple, "chip:forks")
                 Spacer(minLength: 0)
+            }
             }
         }
         .padding(.horizontal, 14)
@@ -177,7 +192,9 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var detailBody: some View {
-        if let s = store.single {
+        if store.mode == .artifacts {
+            ArtifactDetail(store: store)
+        } else if let s = store.single {
             DetailView(store: store, session: s)
         } else if store.selection.count > 1 {
             ContentUnavailableView("\(store.selection.count) sessions selected", systemImage: "checklist",
@@ -191,6 +208,45 @@ struct ContentView: View {
     // MARK: toolbar and status
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if store.mode == .artifacts { artifactToolbar } else { sessionToolbar }
+    }
+
+    @ToolbarContentBuilder private var artifactToolbar: some ToolbarContent {
+        ToolbarItemGroup {
+            Menu {
+                Picker("Sort", selection: $store.artSort) {
+                    ForEach(Store.artSorts, id: \.self) { Text($0.capitalized).tag($0) }
+                }
+                Toggle("Reverse", isOn: $store.artReverse)
+            } label: { Label("Sort: \(store.artSort)\(store.artReverse ? " ↑" : "")", systemImage: "arrow.up.arrow.down") }
+
+            Menu {
+                Picker("Kind", selection: $store.artKind) {
+                    Text("All pages").tag("all")
+                    Text("Local pages").tag("local")
+                    Text("Web only (claude.ai)").tag("web")
+                }
+                Picker("Folder", selection: $store.artDir) {
+                    Text("Any folder").tag("")
+                    ForEach(store.artDirs, id: \.self) { Text($0).tag($0) }
+                }
+                Divider()
+                Button("Clear filters") { store.clearArtFilters() }
+            } label: {
+                Label("Filter", systemImage: store.artFiltersActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            }
+        }
+        ToolbarItemGroup {
+            Button { if let a = store.artifact, let u = URL(string: a.url) { NSWorkspace.shared.open(u) } } label: { Label("Open", systemImage: "arrow.up.right.square") }
+                .disabled(store.artifact == nil).help("Open the page in the browser")
+            Button { if let a = store.artifact { store.copy(a.url, note: "copied the artifact link") } } label: { Label("Copy link", systemImage: "link") }
+                .disabled(store.artifact == nil).help("Copy the page link")
+            Button { if let a = store.artifact { store.goToSession(a.sessionId) } } label: { Label("Go to session", systemImage: "text.bubble") }
+                .disabled(store.artifact == nil).help("Jump to the session that made it")
+        }
+    }
+
+    @ToolbarContentBuilder private var sessionToolbar: some ToolbarContent {
         ToolbarItemGroup {
             Menu {
                 Picker("Sort", selection: $store.sort) {

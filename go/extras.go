@@ -125,6 +125,7 @@ func helpPopup(w, h int) string {
 		k("D", "deep search: all replies"),
 		k("t / T", "tag · T = auto-tag with claude"),
 		k("N", "rename the session (not while it is running)"),
+		k("P", "artifacts: every page Claude published, searchable"),
 		k("#", "filter by tag (press again = next)"),
 		k("a", "ask claude in plain English"),
 	}

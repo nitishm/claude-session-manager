@@ -144,6 +144,15 @@ struct API: Sendable {
         return try decode(http.request("GET", "/sessions" + (c.percentEncodedQuery.map { "?" + $0 } ?? "")), [Session].self)
     }
 
+    func artifacts(_ q: String, deep: Bool) throws -> [ArtifactRow] {
+        var c = URLComponents()
+        var items: [URLQueryItem] = []
+        if !q.isEmpty { items.append(URLQueryItem(name: "q", value: q)) }
+        if deep { items.append(URLQueryItem(name: "deep", value: "1")) }
+        c.queryItems = items.isEmpty ? nil : items
+        return try decode(http.request("GET", "/artifacts" + (c.percentEncodedQuery.map { "?" + $0 } ?? "")), [ArtifactRow].self)
+    }
+
     func session(_ id: String) throws -> Session { try decode(http.request("GET", "/sessions/\(id)"), Session.self) }
     func tags() throws -> [TagCount] { try decode(http.request("GET", "/tags"), [TagCount].self) }
 

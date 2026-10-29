@@ -14,6 +14,39 @@ final class Store {
     private(set) var fetched: [Session] = []
     private(set) var tagCounts: [TagCount] = []
     var selection = Set<String>()
+
+    /// Sessions, or every artifact Claude published across them. The search box serves both.
+    enum Mode: String, CaseIterable { case sessions = "Sessions", artifacts = "Artifacts" }
+    var mode = Mode.sessions { didSet { if mode != oldValue { refreshSoon() } } }
+    var artDeep = false { didSet { if artDeep != oldValue { refreshSoon() } } } // also search inside the pages
+    private(set) var artifactRows: [ArtifactRow] = []
+    var artSelection: String?
+    var artDetailsH: CGFloat = 0 // height of the details panel under the preview; 0 means the page fills the pane
+    var artDragBase: CGFloat?
+    var artifact: ArtifactRow? { artifactRows.first { $0.id == artSelection } }
+
+    // Artifact sort and filters apply to the rows already fetched, so they need no refetch.
+    static let artSorts = ["newest", "oldest", "title", "folder"]
+    static let artKinds = ["all", "local", "web"] // web = no local file, shown through claude.ai
+    var artSort = "newest"
+    var artReverse = false
+    var artKind = "all"
+    var artDir = ""
+    var artDirs: [String] { Array(Set(artifactRows.map(\.dir))).sorted() }
+    var artFiltersActive: Bool { artKind != "all" || !artDir.isEmpty }
+    var artifactShown: [ArtifactRow] {
+        var r = artifactRows.filter { a in
+            (artKind == "all" || (artKind == "web") == (a.file == nil)) && (artDir.isEmpty || a.dir == artDir)
+        }
+        switch artSort {
+        case "oldest": r.sort { $0.at < $1.at }
+        case "title": r.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case "folder": r.sort { ($0.dir, $1.at) < ($1.dir, $0.at) }
+        default: r.sort { $0.at > $1.at }
+        }
+        return artReverse ? r.reversed() : r
+    }
+    func clearArtFilters() { artKind = "all"; artDir = "" }
     var flash = ""
     var busy = Set<String>() // ids with an AI call running
 
@@ -269,6 +302,11 @@ final class Store {
             conn = .ok
             let ids = Set(rows.map(\.id))
             selection.formIntersection(ids)
+            if mode == .artifacts {
+                let q = query, deep = artDeep
+                artifactRows = try await Task.detached { try api.artifacts(q, deep: deep) }.value
+                if let s = artSelection, !artifactRows.contains(where: { $0.id == s }) { artSelection = nil }
+            }
         } catch {
             conn = .down(error.localizedDescription)
         }
@@ -303,6 +341,17 @@ final class Store {
     func pin(_ ids: [String]) async {
         for id in ids { _ = await run("pin", refetch: false) { try $0.pin(id) } }
         await refresh()
+    }
+
+    /// Leaves the Artifacts mode and selects the session a page came from.
+    func goToSession(_ id: String) {
+        query = ""
+        mode = .sessions
+        selection = [id]
+        Task {
+            await refresh()
+            if !rows.contains(where: { $0.id == id }) { say("that session is hidden by a filter") }
+        }
     }
 
     func startRename(_ s: Session) {
