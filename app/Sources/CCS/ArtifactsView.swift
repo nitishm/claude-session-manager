@@ -183,3 +183,43 @@ struct ArtifactDetail: View {
         }
     }
 }
+
+/// Sessions | Artifacts switch: a pill with a violet highlight that slides under the chosen side.
+struct ModeSwitch: View {
+    @Bindable var store: Store
+    @Namespace private var pill
+
+    private func icon(_ m: Store.Mode) -> String { m == .sessions ? "text.bubble.fill" : "square.stack.3d.up.fill" }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Store.Mode.allCases, id: \.self) { m in
+                let on = store.mode == m
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { store.mode = m }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: icon(m)).font(.system(size: 11, weight: .semibold))
+                        Text(m.rawValue).font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(on ? Color.white : Color.primary.opacity(store.hover == "mode:\(m.rawValue)" ? 0.85 : 0.6))
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background {
+                        if on {
+                            Capsule()
+                                .fill(LinearGradient(colors: [Theme.violet, Theme.violet.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .shadow(color: Theme.violet.opacity(0.35), radius: 4, y: 1)
+                                .matchedGeometryEffect(id: "pill", in: pill)
+                        }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain).onHover { store.setHover("mode:\(m.rawValue)", $0) }.clickable()
+            }
+        }
+        .padding(3)
+        .background(Color.primary.opacity(0.07), in: Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
+        .fixedSize()
+    }
+}

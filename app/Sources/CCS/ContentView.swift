@@ -84,13 +84,15 @@ struct ContentView: View {
                 }
             }
             HStack(spacing: 8) {
-                Picker("Mode", selection: $store.mode) { ForEach(Store.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 240)
-                if store.mode == .artifacts {
-                    filterChip("Search inside pages", nil, $store.artDeep, .orange, "chip:artdeep")
-                }
+                ModeSwitch(store: store)
             }
-            if store.mode == .sessions {
+            // Both modes keep a third row, so the title and switch stay put when you toggle.
+            if store.mode == .artifacts {
+            HStack(spacing: 6) {
+                filterChip("Search inside pages", nil, $store.artDeep, .orange, "chip:artdeep")
+                Spacer(minLength: 0)
+            }
+            } else {
             HStack(spacing: 6) {
                 filterChip("Running", store.live.count, $store.liveOnly, .green, "chip:live")
                 filterChip("Needs you", store.waitCount, $store.waitOnly, .blue, "chip:wait")
